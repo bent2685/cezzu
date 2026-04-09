@@ -21,7 +21,7 @@ public struct PlayerView: View {
 
     public var body: some View {
         ZStack(alignment: .bottom) {
-            VideoPlayerLayer(player: coordinator.backend.player)
+            PlayerSurface(player: coordinator.backend.player)
                 .ignoresSafeArea()
             VStack(spacing: 12) {
                 if coordinator.requiresProxyWarning {
@@ -111,18 +111,5 @@ public struct PlayerView: View {
 
     private func formatMillis(_ ms: Int) -> String {
         formatTime(TimeInterval(ms) / 1000.0)
-    }
-}
-
-/// 跨平台的 AVPlayer 视图层封装。
-public struct VideoPlayerLayer: View {
-    public let player: AVPlayer
-
-    public init(player: AVPlayer) {
-        self.player = player
-    }
-
-    public var body: some View {
-        VideoPlayer(player: player)
     }
 }
