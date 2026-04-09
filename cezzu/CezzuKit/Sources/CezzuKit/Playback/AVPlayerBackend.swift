@@ -11,6 +11,9 @@ public final class AVPlayerBackend: VideoPlayerBackend {
     public private(set) var currentTime: TimeInterval = 0
     public private(set) var duration: TimeInterval = 0
     public private(set) var isPlaying: Bool = false
+    /// `true` 当 `AVPlayer` 正在等待缓冲（`.waitingToPlayAtSpecifiedRate`）。
+    /// 供 UI 层显示 spinner 用。
+    public private(set) var isBuffering: Bool = false
     public var rate: Float { player.rate }
 
     private var timeObserverToken: Any?
@@ -42,6 +45,8 @@ public final class AVPlayerBackend: VideoPlayerBackend {
                     self.duration = total.isFinite ? total : 0
                 }
                 self.isPlaying = self.player.timeControlStatus == .playing
+                self.isBuffering =
+                    self.player.timeControlStatus == .waitingToPlayAtSpecifiedRate
             }
         }
     }

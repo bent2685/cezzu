@@ -1,7 +1,7 @@
 import AVKit
 import SwiftUI
 
-/// 播放屏：AVKit 内嵌 + Liquid Glass 控制条。
+/// 播放屏：`AVPlayerLayer` 内嵌 + Liquid Glass 控制条 + 加载 spinner。
 public struct PlayerView: View {
     @State private var coordinator: PlaybackCoordinator
     public let request: PlaybackRequest
@@ -23,6 +23,12 @@ public struct PlayerView: View {
         ZStack(alignment: .bottom) {
             PlayerSurface(player: coordinator.backend.player)
                 .ignoresSafeArea()
+
+            if isLoadingVisible {
+                loadingOverlay
+                    .transition(.opacity)
+            }
+
             VStack(spacing: 12) {
                 if coordinator.requiresProxyWarning {
                     GlassPanel {
@@ -34,11 +40,20 @@ public struct PlayerView: View {
                     }
                     .padding(.horizontal)
                 }
+                if case .failed(let message) = coordinator.phase {
+                    GlassPanel {
+                        Label(message, systemImage: "xmark.octagon")
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                    }
+                    .padding(.horizontal)
+                }
                 controls
                     .padding(.horizontal)
                     .padding(.bottom, 24)
             }
         }
+        .animation(.easeInOut(duration: 0.2), value: isLoadingVisible)
         .navigationTitle(request.episode.title)
         .task {
             if let history,
@@ -67,6 +82,48 @@ public struct PlayerView: View {
             Task { await coordinator.stop() }
         }
     }
+
+    // MARK: - loading overlay
+
+    private var isLoadingVisible: Bool {
+        switch coordinator.phase {
+        case .extracting, .loading:
+            return true
+        case .failed:
+            return false
+        case .idle, .playing, .paused, .finished:
+            return coordinator.backend.isBuffering
+        }
+    }
+
+    private var loadingMessage: String {
+        switch coordinator.phase {
+        case .extracting: return "正在提取播放源…"
+        case .loading: return "正在载入视频…"
+        default: return coordinator.backend.isBuffering ? "缓冲中…" : ""
+        }
+    }
+
+    @ViewBuilder
+    private var loadingOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.35).ignoresSafeArea()
+            VStack(spacing: 12) {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .tint(.white)
+                    .scaleEffect(1.4)
+                if !loadingMessage.isEmpty {
+                    Text(loadingMessage)
+                        .font(.footnote)
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    // MARK: - controls
 
     @ViewBuilder
     private var controls: some View {
