@@ -10,10 +10,10 @@
 
 | 维度 | 现状 |
 | --- | --- |
-| 平台 | iOS 26+ / macOS 26+（**硬性最低线**，为了 Liquid Glass API） |
+| 平台 | **iOS 17+ / macOS 14+** 是最低线（被 SwiftData / `@Observable` 卡住）；iOS 26+ / macOS 26+ 自动启用真 Liquid Glass |
 | 语言 | Swift 6，**严格并发模式**（`SWIFT_STRICT_CONCURRENCY=complete`） |
-| UI | SwiftUI 26 + Liquid Glass（`glassEffect`, `GlassEffectContainer`, `.buttonStyle(.glass)`） |
-| 系统框架 | AVFoundation / AVKit、WebKit、SwiftData、Network.framework |
+| UI | SwiftUI + Liquid Glass（iOS 26+ 走真 API，老平台回落到 `Material`） |
+| 系统框架 | AVFoundation / AVKit、WebKit、SwiftData（iOS 17+）、Network.framework |
 | 第三方依赖 | **唯一一个**：Kanna（XPath / HTML 解析） |
 | 仓库结构 | monorepo，两个 sibling 子项目：`cezzu/`（Swift App） + `cezzu-rule/`（JSON 规则内容） |
 | 工程文件 | XcodeGen 驱动，`cezzu/project.yml` 是唯一权威；`*.xcodeproj` / `*.xcworkspace` **不入 git** |
@@ -69,16 +69,20 @@
 - 优先用 SwiftUI 自适应（`@Environment(\.horizontalSizeClass)` 之类）解决
 - 必须分叉时，把分叉关到 App target 入口（`Cezzu-iOS/Sources/CezzuApp.swift` 或 `Cezzu-macOS/Sources/CezzuApp.swift`），不要污染 CezzuKit
 
-### 3.2 Liquid Glass 走封装组件，禁止直接 Material
+### 3.2 Liquid Glass 走封装组件，禁止直接 Material 或 glassEffect
 
-所有玻璃效果统一走 `cezzu/CezzuKit/Sources/CezzuKit/Views/Design/Glass*.swift` 一组组件（`GlassPanel` / `GlassPrimaryButton` / `GlassToolbar` / `GlassListRow` / `GlassPlayerControls`）。
+所有玻璃效果统一走 `cezzu/CezzuKit/Sources/CezzuKit/Views/Design/Glass*.swift` 一组组件（`GlassPanel` / `GlassPrimaryButton` / `GlassSecondaryButton` / `GlassToolbar` / `GlassListRow` / `GlassPlayerControls`）。所有 if-available 分叉（iOS 26+ 走真 Liquid Glass，老平台回落到 Material）都封装在 `Views/Design/GlassEffectCompat.swift` 的两个入口里：
+
+- `View.glassBackground(in:tint:)` —— 给任意 view 套玻璃背景，**唯一**允许接触玻璃效果的 modifier
+- `GlassContainer { ... }` —— `GlassEffectContainer` 的兼容包装
 
 **禁止**在 view 代码里直接使用：
+- `.glassEffect(...)` / `GlassEffectContainer { ... }` / `glassEffectID(...)` —— 这些都是 iOS 26+ only API，必须通过兼容层
 - `.background(.ultraThinMaterial)` / `.regularMaterial` 等 Material API
+- `.buttonStyle(.glass)` / `.buttonStyle(.glassProminent)` —— 用 `GlassPrimaryButton` / `GlassSecondaryButton`
 - 自绘伪玻璃（`.blur` + `.opacity` + `Color.white.opacity` 拼凑）
-- 自己包一份 `glassEffect` 调用
 
-需要新形态时**扩展 `Glass*.swift`**，而不是绕过它们。
+需要新形态时**扩展 `GlassEffectCompat.swift` 或新建 `Glass*.swift` 组件**，而不是绕过它们。`if #available(iOS 26.0, ...)` 分叉**只允许出现在 `Views/Design/` 目录内**，业务层必须无感知。
 
 ### 3.3 cezzu-rule 格式的 `muliSources` 历史拼写**不许"修复"**
 

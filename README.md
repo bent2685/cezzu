@@ -13,9 +13,15 @@ Cezzu 是一个**单仓库多项目**（monorepo），当前包含两个 sibling
 
 ### 前置依赖
 
-- macOS 26+ + Xcode 26+（为了 Liquid Glass / SwiftUI 26）
-- Swift 6（Xcode 26 自带）
+- macOS 14+ + Xcode 16+（开发环境）
+- Swift 6
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen)：`brew install xcodegen`
+
+### 运行时支持范围
+
+- **iOS 17.0+ / macOS 14.0+**：基础支持线，能跑全部功能
+- **iOS 26+ / macOS 26+**：自动启用真正的 Liquid Glass（`glassEffect` / `GlassEffectContainer` / `.buttonStyle(.glass)`）
+- 老平台上玻璃效果回落到 SwiftUI `Material`（`.ultraThinMaterial`），视觉略弱但完整可用
 
 ### 用 Xcode 启动 / 开发
 
@@ -32,8 +38,8 @@ open Cezzu.xcodeproj
 
 打开后选 scheme：
 
-- **Cezzu-iOS** → ⌘R 跑 iOS Simulator（iOS 26+ 设备 / 模拟器）
-- **Cezzu-macOS** → ⌘R 跑 macOS native（你这台 Mac 必须是 macOS 26+）
+- **Cezzu-iOS** → ⌘R 跑 iOS Simulator（iOS 17+ 设备 / 模拟器；iOS 26+ 自动启用 Liquid Glass）
+- **Cezzu-macOS** → ⌘R 跑 macOS native（macOS 14+；macOS 26+ 自动启用 Liquid Glass）
 
 种子规则会在每次 Xcode build 前由 `Cezzu-iOS` / `Cezzu-macOS` target 的 `preBuildScripts`（即 `cezzu/scripts/sync_seed_rules.sh`）自动同步进 SwiftPM 资源 —— **不需要手动跑**。
 
@@ -65,16 +71,15 @@ swift test --filter CezzuRuleDecodingTests   # 单跑一个 suite
 
 ## 平台与语言
 
-- **iOS 26+ / macOS 26+**（为了 Apple Liquid Glass 设计语言与 SwiftUI 26 新 API）
+- **iOS 17+ / macOS 14+**（最低支持线；iOS 26+ / macOS 26+ 自动启用 Liquid Glass）
 - **Swift 6**，严格并发模式
 - 唯一第三方依赖：[Kanna](https://github.com/tid-kijyun/Kanna)（XPath / HTML 解析）
 
 ## 设计目标
 
 - **真原生**：滚动、手势、PIP、后台播放、内存占用、安装包尺寸 —— 全部按系统原生标准做，不留 Flutter 痕迹。
-- **协议兼容**：cezzu-rule 字段级兼容 [KazumiRules](https://github.com/Predidit/KazumiRules)，用户可一键把 KazumiRules 上游加为自定义源；`plugins.json` 与 Kazumi 互导。
-- **设计语言统一**：iOS / macOS 一套 SwiftUI 代码，全部走 Liquid Glass，无任何手绘伪玻璃。
-- **逻辑零分叉**：核心代码在 `CezzuKit` 里，禁止 `#if os(iOS)` / `#if os(macOS)`，平台分叉只允许出现在 App target 入口。
+- **设计语言渐进增强**：iOS / macOS 一套 SwiftUI 代码；iOS 26+ 上走真正的 Liquid Glass，老平台回落到 `Material`，业务层无感知。所有玻璃效果统一从 `CezzuKit/Views/Design/Glass*.swift` 入口走，禁止手绘伪玻璃。
+- **逻辑零分叉**：核心代码在 `CezzuKit` 里，禁止 `#if os(iOS)` / `#if os(macOS)`，平台分叉只允许出现在 App target 入口；版本分叉走 `if #available`，只允许出现在 `Views/Design/` 内部。
 
 ## 致谢
 

@@ -32,7 +32,7 @@ cezzu/
 
 ### 用 Xcode 跑 App（推荐）
 
-前置：macOS 26+ + Xcode 26+ + `brew install xcodegen`。
+前置：macOS 14+ + Xcode 16+ + `brew install xcodegen`。
 
 ```bash
 cd cezzu/
@@ -42,8 +42,8 @@ open Cezzu.xcodeproj
 
 打开后选 scheme：
 
-- **Cezzu-iOS** → ⌘R 跑 iOS Simulator（iOS 26+）
-- **Cezzu-macOS** → ⌘R 跑 macOS native（macOS 26+）
+- **Cezzu-iOS** → ⌘R 跑 iOS Simulator（iOS 17+；iOS 26+ 自动启用真 Liquid Glass）
+- **Cezzu-macOS** → ⌘R 跑 macOS native（macOS 14+；macOS 26+ 自动启用真 Liquid Glass）
 
 种子规则会在每次 Xcode build 前由 target 的 `preBuildScripts`（即 `scripts/sync_seed_rules.sh`）自动同步进 SwiftPM 资源 —— **不需要手动跑**。
 
@@ -75,10 +75,12 @@ xcodegen generate
 
 `project.yml` 是 source of truth；**不要**直接编辑 Xcode GUI 改 build 配置（GUI 改的会被下次 `xcodegen generate` 覆盖）。
 
-## Liquid Glass 与最低平台
+## Liquid Glass 与平台支持
 
-- **iOS 26 / macOS 26 是硬性最低线**。这是为了使用 SwiftUI 26 引入的 `glassEffect()` / `GlassEffectContainer` / `.buttonStyle(.glass)` / `.buttonStyle(.glassProminent)` / `glassEffectID(_:in:)` 等 Liquid Glass API。
-- 所有玻璃用法收口在 `CezzuKit/Sources/CezzuKit/Views/Design/Glass*.swift` 一组小封装组件里。其他视图代码**禁止直接调用 Material / .ultraThinMaterial / 自绘伪玻璃**，统一走这些组件。
+- **最低支持线**：iOS 17 / macOS 14（被 SwiftData 与 `@Observable` 卡住）
+- **iOS 26 / macOS 26**：自动启用真正的 Liquid Glass API（`glassEffect()` / `GlassEffectContainer` / `.buttonStyle(.glass)` / `.buttonStyle(.glassProminent)` / `glassEffectID(_:in:)`）
+- **iOS 17-25 / macOS 14-25**：回落到 SwiftUI `Material`（`.ultraThinMaterial`）
+- 所有玻璃用法收口在 `CezzuKit/Sources/CezzuKit/Views/Design/Glass*.swift` 一组小封装组件里，内部统一通过 `View.glassBackground(in:tint:)` / `GlassContainer` 兼容入口分叉。其他视图代码**禁止直接调用 `glassEffect` / Material / 自绘伪玻璃**，统一走这些组件。
 
 更多架构铁律见 [`../AGENTS.md`](../AGENTS.md)。
 
