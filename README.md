@@ -1,4 +1,15 @@
-# Cezzu
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/icon-dark.png">
+    <img src="docs/icon-light.png" width="160" alt="Cezzu">
+  </picture>
+</p>
+
+<h1 align="center">Cezzu</h1>
+
+<p align="center">
+  <strong>中文</strong> ・ <a href="./README_en.md">English</a>
+</p>
 
 > 一个原生 iOS / macOS 在线动漫资源播放平台 —— 用 Swift + SwiftUI + Liquid Glass 重写 [Kazumi](https://github.com/Predidit/Kazumi)，复用其规则协议，但内容供给走自有的 [`cezzu-rule`](./cezzu-rule/) 通道。
 
