@@ -5,8 +5,8 @@ let package = Package(
     name: "CezzuKit",
     defaultLocalization: "zh-Hans",
     platforms: [
-        .iOS(.v26),
-        .macOS(.v26),
+        .iOS(.v17),
+        .macOS(.v14),
     ],
     products: [
         .library(
@@ -14,7 +14,7 @@ let package = Package(
             targets: ["CezzuKit"]
         ),
         // 一个 SwiftPM executable，让你不用建 Xcode workspace 就能直接
-        // `swift run CezzuMac` 把整个 App 跑起来（仅限 macOS 26+）。
+        // `swift run CezzuMac` 把整个 App 跑起来。
         // 不带 .app bundle / 不入沙盒；正式上架前再用 README 里的 Xcode 流程。
         .executable(name: "CezzuMac", targets: ["CezzuMac"]),
     ],

@@ -5,8 +5,8 @@ options:
   createIntermediateGroups: true
   generateEmptyDirectories: true
   deploymentTarget:
-    iOS: "26.0"
-    macOS: "26.0"
+    iOS: "17.0"
+    macOS: "14.0"
 
 # 全局 build 设置
 settings:
@@ -29,7 +29,7 @@ targets:
   Cezzu-iOS:
     type: application
     platform: iOS
-    deploymentTarget: "26.0"
+    deploymentTarget: "17.0"
     sources:
       - path: Cezzu-iOS/Sources
     info:
@@ -76,7 +76,7 @@ targets:
   Cezzu-macOS:
     type: application
     platform: macOS
-    deploymentTarget: "26.0"
+    deploymentTarget: "14.0"
     sources:
       - path: Cezzu-macOS/Sources
     info:
@@ -85,7 +85,7 @@ targets:
         CFBundleDisplayName: Cezzu
         CFBundleShortVersionString: "0.1.0"
         CFBundleVersion: "1"
-        LSMinimumSystemVersion: "26.0"
+        LSMinimumSystemVersion: "14.0"
         NSHumanReadableCopyright: "© 2026 bent2685. MIT License."
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true

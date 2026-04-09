@@ -17,9 +17,9 @@ public struct GlassListRow<Content: View>: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .glassEffect(
-            isSelected ? .regular.tint(Color.accentColor.opacity(0.3)) : .regular,
-            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+        .glassBackground(
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous),
+            tint: isSelected ? Color.accentColor.opacity(0.3) : nil
         )
     }
 }

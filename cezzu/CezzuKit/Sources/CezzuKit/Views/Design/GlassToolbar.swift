@@ -16,6 +16,6 @@ public struct GlassToolbar<Content: View>: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .glassEffect(.regular, in: Capsule())
+        .glassBackground(in: Capsule())
     }
 }

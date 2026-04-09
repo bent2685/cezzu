@@ -26,7 +26,7 @@ public struct SearchView: View {
                     .textFieldStyle(.plain)
                     .padding(.horizontal, 18)
                     .padding(.vertical, 14)
-                    .glassEffect(.regular, in: Capsule())
+                    .glassBackground(in: Capsule())
                     .frame(maxWidth: 480)
                     .onSubmit { onSubmit() }
                 GlassPrimaryButton("搜索", systemImage: "magnifyingglass") {
