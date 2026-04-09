@@ -6,8 +6,62 @@ Cezzu 是一个**单仓库多项目**（monorepo），当前包含两个 sibling
 
 | 子项目 | 角色 | 入口 |
 | --- | --- | --- |
-| [`cezzu/`](./cezzu/) | Swift App 本体（`CezzuKit` framework + iOS / macOS 双 App target） | `cezzu/Cezzu.xcworkspace` |
+| [`cezzu/`](./cezzu/) | Swift App 本体（`CezzuKit` framework + iOS / macOS 双 App target） | `cezzu/Cezzu.xcodeproj`（由 XcodeGen 生成） |
 | [`cezzu-rule/`](./cezzu-rule/) | 规则内容仓库（JSON 规则 + 索引 + 文档），App 默认从这里拉资源站规则 | `cezzu-rule/README.md` |
+
+## 快速开始
+
+### 前置依赖
+
+- macOS 26+ + Xcode 26+（为了 Liquid Glass / SwiftUI 26）
+- Swift 6（Xcode 26 自带）
+- [XcodeGen](https://github.com/yonaskolb/XcodeGen)：`brew install xcodegen`
+
+### 用 Xcode 启动 / 开发
+
+```bash
+# 1. clone 整个 monorepo（必须包含 cezzu/ 和 cezzu-rule/ 两个 sibling）
+git clone <repo-url> cezzu && cd cezzu
+
+# 2. 生成 Xcode 工程
+cd cezzu && xcodegen generate
+
+# 3. 用 Xcode 打开
+open Cezzu.xcodeproj
+```
+
+打开后选 scheme：
+
+- **Cezzu-iOS** → ⌘R 跑 iOS Simulator（iOS 26+ 设备 / 模拟器）
+- **Cezzu-macOS** → ⌘R 跑 macOS native（你这台 Mac 必须是 macOS 26+）
+
+种子规则会在每次 Xcode build 前由 `Cezzu-iOS` / `Cezzu-macOS` target 的 `preBuildScripts`（即 `cezzu/scripts/sync_seed_rules.sh`）自动同步进 SwiftPM 资源 —— **不需要手动跑**。
+
+### 改了 `project.yml` 之后
+
+任何对 `cezzu/project.yml` 的修改（加 target、改 build setting、加 entitlement、加文件引用）都必须重跑：
+
+```bash
+cd cezzu && xcodegen generate
+```
+
+`*.xcodeproj` / `*.xcworkspace` **不入 git** —— 它们是生成产物，每个开发者本地各自生成。`project.yml` 是 source of truth，改 build 配置请改它。
+
+### 不开 Xcode 也能跑测试（推荐的开发循环）
+
+改 `CezzuKit` 内部逻辑时最快的反馈循环：
+
+```bash
+cd cezzu/CezzuKit
+swift test                          # 全跑
+swift test --filter CezzuRuleDecodingTests   # 单跑一个 suite
+```
+
+只有需要验证 UI / 真机播放 / WebKit 嗅探时才必须开 Xcode。
+
+### 子项目独立工作
+
+只想改规则内容（不碰 Swift 代码）→ 直接编辑 `cezzu-rule/rules/*.json`，然后跑 `./cezzu-rule/scripts/update_index.swift` 重新生成 `index.json`，详见 [`cezzu-rule/README.md`](./cezzu-rule/README.md)。
 
 ## 平台与语言
 
