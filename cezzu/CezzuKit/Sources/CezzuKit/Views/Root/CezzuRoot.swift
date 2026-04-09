@@ -54,15 +54,18 @@ public final class CezzuSession {
     public let store: RuleStoreCoordinator
     public let history: HistoryStore
     public let container: ModelContainer?
+    public let bangumiAPI: BangumiAPIClientProtocol
 
     public init(
         store: RuleStoreCoordinator,
         history: HistoryStore,
-        container: ModelContainer?
+        container: ModelContainer?,
+        bangumiAPI: BangumiAPIClientProtocol = BangumiAPIClient.shared
     ) {
         self.store = store
         self.history = history
         self.container = container
+        self.bangumiAPI = bangumiAPI
     }
 
     public static func empty() -> CezzuSession {
@@ -108,33 +111,42 @@ struct CompactRootView: View {
     let session: CezzuSession
     @State private var path = NavigationPath()
     @State private var searchModel: SearchViewModel
+    @State private var homeModel: HomeViewModel
 
     init(session: CezzuSession) {
         self.session = session
         self._searchModel = State(
             initialValue: SearchViewModel(store: session.store)
         )
+        self._homeModel = State(
+            initialValue: HomeViewModel(api: session.bangumiAPI)
+        )
     }
 
     var body: some View {
         TabView {
             NavigationStack(path: $path) {
-                SearchView(model: searchModel) {
-                    Task { await searchModel.submit() }
-                    path.append(Route.results(keyword: searchModel.text))
-                }
+                HomeView(
+                    model: homeModel,
+                    onTapItem: { item in
+                        path.append(Route.bangumiInfo(item))
+                    },
+                    onTapSearch: {
+                        path.append(Route.search)
+                    }
+                )
                 .navigationDestination(for: Route.self) { route in
                     routeView(route)
                 }
             }
-            .tabItem { Label("搜索", systemImage: "magnifyingglass") }
+            .tabItem { Label("主页", systemImage: "house") }
 
             NavigationStack {
                 HistoryView(history: session.history) { _ in
                     // history navigation handled by future change
                 }
             }
-            .tabItem { Label("最近", systemImage: "clock") }
+            .tabItem { Label("最近观看", systemImage: "clock") }
 
             NavigationStack {
                 RuleManagerView(store: session.store)
@@ -151,15 +163,26 @@ struct CompactRootView: View {
     @ViewBuilder
     private func routeView(_ route: Route) -> some View {
         switch route {
+        case .home:
+            HomeView(
+                model: homeModel,
+                onTapItem: { item in path.append(Route.bangumiInfo(item)) },
+                onTapSearch: { path.append(Route.search) }
+            )
+        case .bangumiInfo(let item):
+            BangumiInfoView(item: item) { keyword in
+                searchModel.text = keyword
+                Task { await searchModel.submit() }
+                path.append(Route.results(keyword: keyword))
+            }
         case .search:
-            SearchView(model: searchModel) {}
+            SearchView(model: searchModel) {
+                Task { await searchModel.submit() }
+                path.append(Route.results(keyword: searchModel.text))
+            }
         case .results:
             ResultsView(model: searchModel) { result in
-                if let rule = session.store.installedRules.first(where: { $0.name == result.ruleName })?.rule {
-                    let dvm = DetailViewModel(result: result, rule: rule)
-                    path.append(Route.detail(result))
-                    _ = dvm
-                }
+                path.append(Route.detail(result))
             }
         case .detail(let result):
             if let rule = session.store.installedRules.first(where: { $0.name == result.ruleName })?.rule {
@@ -193,16 +216,17 @@ struct CompactRootView: View {
 
 struct SplitRootView: View {
     let session: CezzuSession
-    @State private var sidebarItem: SidebarItem? = .search
+    @State private var sidebarItem: SidebarItem? = .home
     @State private var path = NavigationPath()
     @State private var searchModel: SearchViewModel
+    @State private var homeModel: HomeViewModel
 
     enum SidebarItem: Hashable, Identifiable {
-        case search, history, rules, settings
+        case home, history, rules, settings
         var id: SidebarItem { self }
         var label: String {
             switch self {
-            case .search: return "搜索"
+            case .home: return "主页"
             case .history: return "最近观看"
             case .rules: return "规则"
             case .settings: return "设置"
@@ -210,7 +234,7 @@ struct SplitRootView: View {
         }
         var systemImage: String {
             switch self {
-            case .search: return "magnifyingglass"
+            case .home: return "house"
             case .history: return "clock"
             case .rules: return "list.bullet.rectangle"
             case .settings: return "gearshape"
@@ -222,6 +246,9 @@ struct SplitRootView: View {
         self.session = session
         self._searchModel = State(
             initialValue: SearchViewModel(store: session.store)
+        )
+        self._homeModel = State(
+            initialValue: HomeViewModel(api: session.bangumiAPI)
         )
     }
 
@@ -261,7 +288,7 @@ struct SplitRootView: View {
     private var sidebar: some View {
         List(selection: $sidebarItem) {
             ForEach(
-                [SidebarItem.search, .history, .rules, .settings]
+                [SidebarItem.home, .history, .rules, .settings]
             ) { item in
                 Label(item.label, systemImage: item.systemImage)
                     .tag(item)
@@ -272,12 +299,13 @@ struct SplitRootView: View {
 
     @ViewBuilder
     private var rootContent: some View {
-        switch sidebarItem ?? .search {
-        case .search:
-            SearchView(model: searchModel) {
-                Task { await searchModel.submit() }
-                path.append(Route.results(keyword: searchModel.text))
-            }
+        switch sidebarItem ?? .home {
+        case .home:
+            HomeView(
+                model: homeModel,
+                onTapItem: { item in path.append(Route.bangumiInfo(item)) },
+                onTapSearch: { path.append(Route.search) }
+            )
         case .history:
             HistoryView(history: session.history) { _ in }
         case .rules:
@@ -290,6 +318,23 @@ struct SplitRootView: View {
     @ViewBuilder
     private func navigationDestination(for route: Route) -> some View {
         switch route {
+        case .home:
+            HomeView(
+                model: homeModel,
+                onTapItem: { item in path.append(Route.bangumiInfo(item)) },
+                onTapSearch: { path.append(Route.search) }
+            )
+        case .bangumiInfo(let item):
+            BangumiInfoView(item: item) { keyword in
+                searchModel.text = keyword
+                Task { await searchModel.submit() }
+                path.append(Route.results(keyword: keyword))
+            }
+        case .search:
+            SearchView(model: searchModel) {
+                Task { await searchModel.submit() }
+                path.append(Route.results(keyword: searchModel.text))
+            }
         case .results:
             ResultsView(model: searchModel) { result in
                 path.append(Route.detail(result))
