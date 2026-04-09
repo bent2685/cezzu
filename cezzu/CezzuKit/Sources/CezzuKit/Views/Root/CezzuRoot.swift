@@ -220,6 +220,7 @@ struct SplitRootView: View {
     @State private var path = NavigationPath()
     @State private var searchModel: SearchViewModel
     @State private var homeModel: HomeViewModel
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     enum SidebarItem: Hashable, Identifiable {
         case home, history, rules, settings
@@ -255,34 +256,49 @@ struct SplitRootView: View {
     var body: some View {
         // 注意：macOS 26 的 NavigationSplitView 默认 sidebar 自动套 Liquid Glass，
         // 我们故意不加任何 .background(...)。
-        #if os(macOS)
-            // macOS：两列布局（侧边栏 + 右侧内容），不要中间那列
-            NavigationSplitView {
-                sidebar
-            } detail: {
-                NavigationStack(path: $path) {
-                    rootContent
-                        .navigationDestination(for: Route.self) { route in
-                            navigationDestination(for: route)
-                        }
+        //
+        // `columnVisibility` 由 `PlayerChromeController` 驱动：PlayerView 进入
+        // 沉浸 / 全屏模式时会把它推到 `.detailOnly`，退出时恢复到 `.all`。
+        let visibilityBinding = $columnVisibility
+        let content: some View = {
+            #if os(macOS)
+                // macOS：两列布局（侧边栏 + 右侧内容），不要中间那列
+                return NavigationSplitView(columnVisibility: visibilityBinding) {
+                    sidebar
+                } detail: {
+                    NavigationStack(path: $path) {
+                        rootContent
+                            .navigationDestination(for: Route.self) { route in
+                                navigationDestination(for: route)
+                            }
+                    }
+                }
+            #else
+                // iPad：保留三列布局
+                return NavigationSplitView(columnVisibility: visibilityBinding) {
+                    sidebar
+                } content: {
+                    NavigationStack(path: $path) {
+                        rootContent
+                            .navigationDestination(for: Route.self) { route in
+                                navigationDestination(for: route)
+                            }
+                    }
+                } detail: {
+                    Text("选择左侧任一条目开始")
+                        .foregroundStyle(.secondary)
+                }
+            #endif
+        }()
+        return content.environment(
+            \.playerChromeController,
+            PlayerChromeController { hidden in
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    visibilityBinding.wrappedValue =
+                        hidden ? .detailOnly : .all
                 }
             }
-        #else
-            // iPad：保留三列布局
-            NavigationSplitView {
-                sidebar
-            } content: {
-                NavigationStack(path: $path) {
-                    rootContent
-                        .navigationDestination(for: Route.self) { route in
-                            navigationDestination(for: route)
-                        }
-                }
-            } detail: {
-                Text("选择左侧任一条目开始")
-                    .foregroundStyle(.secondary)
-            }
-        #endif
+        )
     }
 
     private var sidebar: some View {

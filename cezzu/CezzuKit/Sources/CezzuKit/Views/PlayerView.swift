@@ -1,13 +1,17 @@
 import AVKit
+import Observation
 import SwiftUI
 
-/// 播放屏：`AVPlayerLayer` 内嵌 + Liquid Glass 控制条 + 加载 spinner。
+/// 播放屏：`AVPlayerLayer` 内嵌 + Liquid Glass 控制条 + 加载 spinner + 沉浸模式。
 public struct PlayerView: View {
     @State private var coordinator: PlaybackCoordinator
     public let request: PlaybackRequest
     public let history: HistoryStore?
 
+    @Environment(\.playerChromeController) private var chrome
+
     @State private var showResumePrompt: Bool = false
+    @State private var isImmersive: Bool = false
 
     public init(
         request: PlaybackRequest,
@@ -54,7 +58,9 @@ public struct PlayerView: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: isLoadingVisible)
-        .navigationTitle(request.episode.title)
+        .navigationTitle(isImmersive ? "" : request.episode.title)
+        .toolbar(isImmersive ? .hidden : .automatic, for: .automatic)
+        .toolbarBackground(.hidden, for: .automatic)
         .task {
             if let history,
                 let entry = try? history.entry(forDetailURL: request.anime.detailURL),
@@ -79,6 +85,7 @@ public struct PlayerView: View {
             }
         }
         .onDisappear {
+            chrome.setSidebarHidden(false)
             Task { await coordinator.stop() }
         }
     }
@@ -147,17 +154,34 @@ public struct PlayerView: View {
                     .font(.caption.monospacedDigit())
             },
             trailing: {
-                Menu {
-                    ForEach([0.5, 1.0, 1.25, 1.5, 2.0], id: \.self) { rate in
-                        Button("\(rate, specifier: "%.2f")x") {
-                            coordinator.setRate(Float(rate))
+                HStack(spacing: 8) {
+                    Menu {
+                        ForEach([0.5, 1.0, 1.25, 1.5, 2.0], id: \.self) { rate in
+                            Button("\(rate, specifier: "%.2f")x") {
+                                coordinator.setRate(Float(rate))
+                            }
                         }
+                    } label: {
+                        GlassSecondaryButton("倍速", systemImage: "speedometer") {}
                     }
-                } label: {
-                    GlassSecondaryButton("倍速", systemImage: "speedometer") {}
+                    GlassSecondaryButton(
+                        isImmersive ? "退出" : "全屏",
+                        systemImage: isImmersive
+                            ? "arrow.down.right.and.arrow.up.left"
+                            : "arrow.up.left.and.arrow.down.right"
+                    ) {
+                        toggleImmersive()
+                    }
                 }
             }
         )
+    }
+
+    private func toggleImmersive() {
+        withAnimation(.easeInOut(duration: 0.25)) {
+            isImmersive.toggle()
+        }
+        chrome.setSidebarHidden(isImmersive)
     }
 
     private func formatTime(_ seconds: TimeInterval) -> String {
@@ -168,5 +192,36 @@ public struct PlayerView: View {
 
     private func formatMillis(_ ms: Int) -> String {
         formatTime(TimeInterval(ms) / 1000.0)
+    }
+}
+
+// MARK: - chrome controller environment
+
+/// 让 `PlayerView` 能请求外层根视图隐藏 / 恢复 sidebar 等 chrome 元素。
+/// 走 Environment 注入而不是直接改全局状态，让 CompactRootView（没有 sidebar）
+/// 可以用空实现接入。
+public struct PlayerChromeController: Sendable {
+    private let setSidebarHiddenImpl: @MainActor @Sendable (Bool) -> Void
+
+    public init(
+        setSidebarHidden: @escaping @MainActor @Sendable (Bool) -> Void = { _ in }
+    ) {
+        self.setSidebarHiddenImpl = setSidebarHidden
+    }
+
+    @MainActor
+    public func setSidebarHidden(_ hidden: Bool) {
+        setSidebarHiddenImpl(hidden)
+    }
+}
+
+private struct PlayerChromeControllerKey: EnvironmentKey {
+    static let defaultValue = PlayerChromeController()
+}
+
+extension EnvironmentValues {
+    public var playerChromeController: PlayerChromeController {
+        get { self[PlayerChromeControllerKey.self] }
+        set { self[PlayerChromeControllerKey.self] = newValue }
     }
 }
