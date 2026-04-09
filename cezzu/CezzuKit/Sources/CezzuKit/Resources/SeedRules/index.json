@@ -1,0 +1,130 @@
+[
+  {
+    "antiCrawlerEnabled" : false,
+    "author" : "",
+    "lastUpdate" : 1775655282909,
+    "name" : "7sefun",
+    "useNativePlayer" : true,
+    "version" : "1.2"
+  },
+  {
+    "antiCrawlerEnabled" : false,
+    "author" : "",
+    "lastUpdate" : 1775655282944,
+    "name" : "AGE",
+    "useNativePlayer" : true,
+    "version" : "1.5"
+  },
+  {
+    "antiCrawlerEnabled" : false,
+    "author" : "",
+    "lastUpdate" : 1775655283013,
+    "name" : "DM84",
+    "useNativePlayer" : true,
+    "version" : "1.4"
+  },
+  {
+    "antiCrawlerEnabled" : true,
+    "author" : "",
+    "lastUpdate" : 1775655283098,
+    "name" : "LMM",
+    "useNativePlayer" : true,
+    "version" : "2.0"
+  },
+  {
+    "antiCrawlerEnabled" : false,
+    "author" : "",
+    "lastUpdate" : 1775655283139,
+    "name" : "MXdm",
+    "useNativePlayer" : true,
+    "version" : "2.3"
+  },
+  {
+    "antiCrawlerEnabled" : false,
+    "author" : "",
+    "lastUpdate" : 1775655282937,
+    "name" : "aafun",
+    "useNativePlayer" : true,
+    "version" : "1.0"
+  },
+  {
+    "antiCrawlerEnabled" : false,
+    "author" : "",
+    "lastUpdate" : 1775655282976,
+    "name" : "baimao",
+    "useNativePlayer" : true,
+    "version" : "1.0"
+  },
+  {
+    "antiCrawlerEnabled" : false,
+    "author" : "",
+    "lastUpdate" : 1775655283036,
+    "name" : "enlie",
+    "useNativePlayer" : true,
+    "version" : "1.0"
+  },
+  {
+    "antiCrawlerEnabled" : true,
+    "author" : "",
+    "lastUpdate" : 1775655283054,
+    "name" : "giriGiriLove",
+    "useNativePlayer" : true,
+    "version" : "2.1"
+  },
+  {
+    "antiCrawlerEnabled" : false,
+    "author" : "",
+    "lastUpdate" : 1775655283058,
+    "name" : "gpjda",
+    "useNativePlayer" : true,
+    "version" : "1.0"
+  },
+  {
+    "antiCrawlerEnabled" : false,
+    "author" : "",
+    "lastUpdate" : 1775655283062,
+    "name" : "gugu3",
+    "useNativePlayer" : true,
+    "version" : "1.2"
+  },
+  {
+    "antiCrawlerEnabled" : false,
+    "author" : "",
+    "lastUpdate" : 1775655283136,
+    "name" : "mwcy",
+    "useNativePlayer" : true,
+    "version" : "1.2"
+  },
+  {
+    "antiCrawlerEnabled" : false,
+    "author" : "",
+    "lastUpdate" : 1775655283155,
+    "name" : "omofun03",
+    "useNativePlayer" : true,
+    "version" : "1.0"
+  },
+  {
+    "antiCrawlerEnabled" : true,
+    "author" : "",
+    "lastUpdate" : 1775655283197,
+    "name" : "xfdm",
+    "useNativePlayer" : true,
+    "version" : "2.0"
+  },
+  {
+    "antiCrawlerEnabled" : false,
+    "author" : "",
+    "lastUpdate" : 1775655283201,
+    "name" : "xfdmneo",
+    "useNativePlayer" : true,
+    "version" : "1.1"
+  },
+  {
+    "antiCrawlerEnabled" : false,
+    "author" : "",
+    "lastUpdate" : 1775655283224,
+    "name" : "yishijie",
+    "useNativePlayer" : true,
+    "version" : "1.1"
+  }
+]

@@ -1,0 +1,51 @@
+# ─── macOS ───
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# ─── Swift Package Manager ───
+.build/
+.swiftpm/
+Packages/
+Package.pins
+*.xcodeproj/project.xcworkspace/xcuserdata/
+
+# ─── Xcode ───
+## XcodeGen 生成物（source of truth 是 project.yml；workspace 由用户本地按 README 步骤创建）
+*.xcodeproj/
+*.xcworkspace/
+
+## Xcode 用户态（即使将来某个 .xcodeproj 入了 git 也要排除）
+xcuserdata/
+*.xcuserstate
+*.xcuserdatad
+*.xccheckout
+*.moved-aside
+DerivedData/
+build/
+
+## Obj-C/Swift 临时文件
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# ─── 测试/覆盖率 ───
+*.gcno
+*.gcda
+*.profraw
+*.profdata
+
+# ─── 编辑器 / IDE ───
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ─── 日志 / 临时文件 ───
+*.log
+tmp/
+.tmp/
