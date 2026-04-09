@@ -61,8 +61,8 @@ struct BangumiAPIClientTests {
         #expect(items[1].id == 100)
     }
 
-    /// `search` 应该向 api.bgm.tv 发 POST + JSON body，body 里 filter.tag 包含选择的 tag
-    @Test("search sends POST with JSON body containing tag")
+    /// `search(keyword:sort:)` 应该向 api.bgm.tv 发 POST + JSON body，带关键字与排序。
+    @Test("search sends POST with JSON body containing keyword and sort")
     func searchHappyPath() async throws {
         let searchJSON = """
         {
@@ -106,14 +106,16 @@ struct BangumiAPIClientTests {
                 let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any]
                 let filter = json?["filter"] as? [String: Any]
                 let tags = filter?["tag"] as? [String]
-                #expect(tags == ["治愈"])
+                #expect(json?["keyword"] as? String == "芙莉莲")
+                #expect(json?["sort"] as? String == "score")
+                #expect(tags?.isEmpty == true)
                 #expect(filter?["nsfw"] as? Bool == false)
 
                 return (200, Data(searchJSON.utf8))
             }
         )
         let client = BangumiAPIClient(session: session)
-        let items = try await client.search(tag: "治愈", limit: 30, offset: 0)
+        let items = try await client.search(keyword: "芙莉莲", sort: .score, tag: "", limit: 30, offset: 0)
         #expect(items.count == 1)
         #expect(items[0].nameCn == "甲")
     }
@@ -178,6 +180,39 @@ struct BangumiAPIClientTests {
         let client = BangumiAPIClient(session: session)
         let items = try await client.search(tag: "", limit: 10, offset: 0)
         #expect(items.isEmpty)
+    }
+
+    @Test("fetchTags decodes subject tags from Bangumi subject details")
+    func fetchTagsDecodesSubjectTags() async throws {
+        let subjectJSON = """
+        {
+            "id": 1,
+            "name": "alpha",
+            "name_cn": "甲",
+            "summary": "",
+            "date": "",
+            "images": {"large": "L", "common": "C", "medium": "M", "small": "S", "grid": "G"},
+            "rating": {"rank": 1, "score": 8.0},
+            "tags": [
+                {"name": "校园", "count": 321},
+                {"name": "日常", "count": 280}
+            ]
+        }
+        """
+        let session = URLSession.stub(
+            handler: { req in
+                #expect(req.httpMethod == "GET")
+                #expect(req.url?.host == "api.bgm.tv")
+                #expect(req.url?.path == "/v0/subjects/1")
+                return (200, Data(subjectJSON.utf8))
+            }
+        )
+        let client = BangumiAPIClient(session: session)
+        let tags = try await client.fetchTags(subjectID: 1)
+        #expect(tags.count == 2)
+        #expect(tags[0].name == "校园")
+        #expect(tags[0].count == 321)
+        #expect(tags[1].name == "日常")
     }
 }
 

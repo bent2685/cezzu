@@ -36,16 +36,19 @@ public final class HistoryStore {
         )
         let existing = try context.fetch(descriptor).first
         let episode = request.episode
+        let resolvedCoverURL = coverURL ?? URL(string: request.item?.images.best ?? "")
         if let existing {
             existing.lastEpisodeIndex = episode.index
             existing.lastEpisodeTitle = episode.title
+            existing.ruleName = request.anime.ruleName
+            existing.coverURLString = resolvedCoverURL?.absoluteString ?? existing.coverURLString
             existing.lastPositionMs = 0
             existing.updatedAt = .now
         } else {
             let entry = WatchHistoryEntry(
                 detailURLString: key,
                 bangumiTitle: request.anime.title,
-                coverURLString: coverURL?.absoluteString,
+                coverURLString: resolvedCoverURL?.absoluteString,
                 ruleName: request.anime.ruleName,
                 lastEpisodeIndex: episode.index,
                 lastEpisodeTitle: episode.title,

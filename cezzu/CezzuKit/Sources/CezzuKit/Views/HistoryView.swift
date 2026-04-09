@@ -24,13 +24,24 @@ public struct HistoryView: View {
                         onTap(entry)
                     } label: {
                         GlassListRow {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(entry.bangumiTitle).font(.headline)
-                                Text(entry.lastEpisodeTitle).font(.caption)
-                                    .foregroundStyle(.secondary)
-                                Text("来自 \(entry.ruleName) · \(formatTime(entry.lastPositionMs))")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
+                            HStack(alignment: .top, spacing: 12) {
+                                historyCover(entry)
+                                    .frame(width: 56, height: 80)
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(entry.bangumiTitle)
+                                        .font(.headline)
+                                        .lineLimit(2)
+                                    Text("第 \(entry.lastEpisodeIndex + 1) 集")
+                                        .font(.caption.weight(.medium))
+                                        .foregroundStyle(.primary)
+                                    Text(entry.lastEpisodeTitle)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                    Text("来自 \(entry.ruleName) · \(formatTime(entry.lastPositionMs))")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
                             }
                         }
                     }
@@ -56,6 +67,29 @@ public struct HistoryView: View {
     private func formatTime(_ ms: Int) -> String {
         let s = ms / 1000
         return String(format: "%02d:%02d", s / 60, s % 60)
+    }
+
+    @ViewBuilder
+    private func historyCover(_ entry: WatchHistoryEntry) -> some View {
+        let url = URL(string: entry.coverURLString ?? "")
+        AsyncImage(url: url, transaction: Transaction(animation: .easeInOut(duration: 0.2))) { phase in
+            switch phase {
+            case .success(let image):
+                image
+                    .resizable()
+                    .scaledToFill()
+            default:
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.white.opacity(0.08))
+                    .overlay {
+                        Image(systemName: "tv")
+                            .font(.title3)
+                            .foregroundStyle(.secondary)
+                    }
+            }
+        }
+        .clipped()
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
 

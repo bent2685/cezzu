@@ -10,8 +10,10 @@ struct HomeViewModelTests {
     final class FakeBangumiAPI: BangumiAPIClientProtocol, @unchecked Sendable {
         var trendingResult: Result<[BangumiItem], BangumiAPIError> = .success([])
         var searchResult: Result<[BangumiItem], BangumiAPIError> = .success([])
+        var keywordSearchResult: Result<[BangumiItem], BangumiAPIError> = .success([])
         private(set) var trendingCalls: Int = 0
         private(set) var searchCalls: [String] = []
+        private(set) var keywordSearchCalls: [(String, BangumiSearchSort, Int)] = []
 
         func trending(limit: Int, offset: Int) async throws -> [BangumiItem] {
             trendingCalls += 1
@@ -28,6 +30,26 @@ struct HomeViewModelTests {
             case .failure(let error): throw error
             }
         }
+
+        func search(
+            keyword: String,
+            sort: BangumiSearchSort,
+            tag: String,
+            limit: Int,
+            offset: Int
+        ) async throws -> [BangumiItem] {
+            keywordSearchCalls.append((keyword, sort, offset))
+            switch keywordSearchResult {
+            case .success(let items): return items
+            case .failure(let error): throw error
+            }
+        }
+
+        func fetchTags(subjectID: Int) async throws -> [BangumiTag] { [] }
+        func fetchCharacters(subjectID: Int) async throws -> [BangumiRelatedCharacter] { [] }
+        func fetchPersons(subjectID: Int) async throws -> [BangumiRelatedPerson] { [] }
+        func fetchComments(subjectID: Int) async throws -> [BangumiSubjectComment] { [] }
+        func fetchReviews(subjectID: Int) async throws -> [BangumiSubjectReview] { [] }
     }
 
     private static func makeItem(id: Int, name: String) -> BangumiItem {
@@ -146,6 +168,25 @@ struct HomeViewModelTests {
         #expect(HomeViewModel.availableTags.first == "日常")
         #expect(HomeViewModel.availableTags.contains("治愈"))
         #expect(HomeViewModel.availableTags.contains("异世界"))
+    }
+
+    @Test("loadMoreIfNeeded appends next page when reaching the last item")
+    func loadMoreAppendsNextPage() async {
+        let api = FakeBangumiAPI()
+        api.trendingResult = .success((1...24).map { Self.makeItem(id: $0, name: "Item \($0)") })
+        let vm = HomeViewModel(api: api)
+
+        await vm.loadInitialIfNeeded()
+        await vm.waitForIdle()
+
+        api.trendingResult = .success((25...30).map { Self.makeItem(id: $0, name: "Item \($0)") })
+        await vm.loadMoreIfNeeded(currentItem: vm.items[23])
+
+        #expect(vm.items.count == 30)
+        #expect(vm.items.last?.id == 30)
+        #expect(vm.isLoadingMore == false)
+        #expect(vm.hasMore == false)
+        #expect(api.trendingCalls == 2)
     }
 }
 

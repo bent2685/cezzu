@@ -6,12 +6,20 @@ public struct PlaybackRequest: Hashable, Sendable {
     public var roadIndex: Int
     public var episodeIndex: Int
     public var rule: CezzuRule
+    public var item: BangumiItem?
 
-    public init(anime: AnimeDetail, roadIndex: Int, episodeIndex: Int, rule: CezzuRule) {
+    public init(
+        anime: AnimeDetail,
+        roadIndex: Int,
+        episodeIndex: Int,
+        rule: CezzuRule,
+        item: BangumiItem? = nil
+    ) {
         self.anime = anime
         self.roadIndex = roadIndex
         self.episodeIndex = episodeIndex
         self.rule = rule
+        self.item = item
     }
 
     public var episode: Episode {

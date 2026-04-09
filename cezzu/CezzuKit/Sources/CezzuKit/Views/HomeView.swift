@@ -122,17 +122,17 @@ public struct HomeView: View {
 
     @ViewBuilder
     private var grid: some View {
-        let columns = [
-            GridItem(.adaptive(minimum: 140, maximum: 200), spacing: 14, alignment: .top)
-        ]
-        LazyVGrid(columns: columns, alignment: .leading, spacing: 18) {
-            ForEach(model.items) { item in
-                Button {
-                    onTapItem(item)
-                } label: {
-                    BangumiCard(item: item)
+        BangumiGrid(
+            items: model.items,
+            onTapItem: onTapItem,
+            onLoadMore: { item in
+                await model.loadMoreIfNeeded(currentItem: item)
+            }
+        ) {
+            if model.isLoadingMore {
+                GlassPanel {
+                    ProgressView("加载更多中…")
                 }
-                .buttonStyle(.plain)
             }
         }
     }

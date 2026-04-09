@@ -2,7 +2,14 @@ import Foundation
 
 /// 跨规则并发搜索协调者。每个启用的规则一个子任务，结果通过 `AsyncStream` 流式
 /// 推回 caller，让 UI 在第一条结果回来时立刻开始 render。
-public actor SearchCoordinator {
+public protocol SourceSearchCoordinating: Sendable {
+    func search(
+        keyword: String,
+        rules: [CezzuRule]
+    ) -> AsyncStream<SearchCoordinator.Update>
+}
+
+public actor SearchCoordinator: SourceSearchCoordinating {
 
     public enum Update: Sendable {
         case ruleStarted(name: String)

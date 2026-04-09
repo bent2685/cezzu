@@ -1,4 +1,5 @@
 import Foundation
+@preconcurrency import Kanna
 
 #if canImport(FoundationNetworking)
     import FoundationNetworking
@@ -10,6 +11,19 @@ public protocol BangumiAPIClientProtocol: Sendable {
     func trending(limit: Int, offset: Int) async throws -> [BangumiItem]
     /// 按 tag 拿番剧列表（api.bgm.tv `/v0/search/subjects`）
     func search(tag: String, limit: Int, offset: Int) async throws -> [BangumiItem]
+    /// 按关键字搜索番剧，并支持排序。
+    func search(
+        keyword: String,
+        sort: BangumiSearchSort,
+        tag: String,
+        limit: Int,
+        offset: Int
+    ) async throws -> [BangumiItem]
+    func fetchTags(subjectID: Int) async throws -> [BangumiTag]
+    func fetchCharacters(subjectID: Int) async throws -> [BangumiRelatedCharacter]
+    func fetchPersons(subjectID: Int) async throws -> [BangumiRelatedPerson]
+    func fetchComments(subjectID: Int) async throws -> [BangumiSubjectComment]
+    func fetchReviews(subjectID: Int) async throws -> [BangumiSubjectReview]
 }
 
 /// Bangumi.tv 真实 HTTP 客户端。
@@ -26,12 +40,14 @@ public actor BangumiAPIClient: BangumiAPIClientProtocol {
     private let userAgent: String
     private let nextDomain: URL
     private let apiDomain: URL
+    private let webDomain: URL
 
     public init(
         session: URLSession? = nil,
         userAgent: String = BangumiAPIClient.defaultUserAgent,
         apiDomain: URL = URL(string: "https://api.bgm.tv")!,
-        nextDomain: URL = URL(string: "https://next.bgm.tv")!
+        nextDomain: URL = URL(string: "https://next.bgm.tv")!,
+        webDomain: URL = URL(string: "https://bgm.tv")!
     ) {
         if let session {
             self.session = session
@@ -44,6 +60,7 @@ public actor BangumiAPIClient: BangumiAPIClientProtocol {
         self.userAgent = userAgent
         self.apiDomain = apiDomain
         self.nextDomain = nextDomain
+        self.webDomain = webDomain
     }
 
     public static let defaultUserAgent =
@@ -78,6 +95,78 @@ public actor BangumiAPIClient: BangumiAPIClientProtocol {
         limit: Int = 30,
         offset: Int = 0
     ) async throws -> [BangumiItem] {
+        try await searchSubjects(
+            keyword: "",
+            sort: .rank,
+            limit: limit,
+            offset: offset,
+            filterTag: tag
+        )
+    }
+
+    public func search(
+        keyword: String,
+        sort: BangumiSearchSort,
+        tag: String = "",
+        limit: Int = 30,
+        offset: Int = 0
+    ) async throws -> [BangumiItem] {
+        try await searchSubjects(
+            keyword: keyword,
+            sort: sort,
+            limit: limit,
+            offset: offset,
+            filterTag: tag
+        )
+    }
+
+    public func fetchTags(subjectID: Int) async throws -> [BangumiTag] {
+        let req = try makeAPIRequest(path: "/v0/subjects/\(subjectID)")
+        let data = try await perform(req)
+        do {
+            return try JSONDecoder().decode(BangumiItem.self, from: data).tags
+        } catch {
+            throw BangumiAPIError.decoding(message: String(describing: error))
+        }
+    }
+
+    public func fetchCharacters(subjectID: Int) async throws -> [BangumiRelatedCharacter] {
+        let req = try makeAPIRequest(path: "/v0/subjects/\(subjectID)/characters")
+        let data = try await perform(req)
+        do {
+            return try JSONDecoder().decode([BangumiRelatedCharacter].self, from: data)
+        } catch {
+            throw BangumiAPIError.decoding(message: String(describing: error))
+        }
+    }
+
+    public func fetchPersons(subjectID: Int) async throws -> [BangumiRelatedPerson] {
+        let req = try makeAPIRequest(path: "/v0/subjects/\(subjectID)/persons")
+        let data = try await perform(req)
+        do {
+            return try JSONDecoder().decode([BangumiRelatedPerson].self, from: data)
+        } catch {
+            throw BangumiAPIError.decoding(message: String(describing: error))
+        }
+    }
+
+    public func fetchComments(subjectID: Int) async throws -> [BangumiSubjectComment] {
+        let html = try await fetchWebHTML(path: "/subject/\(subjectID)/comments")
+        return try parseComments(html: html)
+    }
+
+    public func fetchReviews(subjectID: Int) async throws -> [BangumiSubjectReview] {
+        let html = try await fetchWebHTML(path: "/subject/\(subjectID)/reviews")
+        return try parseReviews(html: html)
+    }
+
+    private func searchSubjects(
+        keyword: String,
+        sort: BangumiSearchSort,
+        limit: Int,
+        offset: Int,
+        filterTag: String
+    ) async throws -> [BangumiItem] {
         var components = URLComponents(
             url: apiDomain.appendingPathComponent("/v0/search/subjects"),
             resolvingAgainstBaseURL: false
@@ -95,11 +184,11 @@ public actor BangumiAPIClient: BangumiAPIClientProtocol {
         applyHeaders(to: &req)
 
         let body = SearchRequestBody(
-            keyword: "",
-            sort: "rank",
+            keyword: keyword,
+            sort: sort.rawValue,
             filter: SearchRequestBody.Filter(
                 type: [2],
-                tag: tag.isEmpty ? [] : [tag],
+                tag: filterTag.isEmpty ? [] : [filterTag],
                 rank: [">0", "<=99999"],
                 nsfw: false
             )
@@ -115,6 +204,27 @@ public actor BangumiAPIClient: BangumiAPIClientProtocol {
     private func applyHeaders(to req: inout URLRequest) {
         req.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
+    }
+
+    private func makeAPIRequest(path: String) throws -> URLRequest {
+        let url = apiDomain.appendingPathComponent(path)
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        applyHeaders(to: &req)
+        return req
+    }
+
+    private func fetchWebHTML(path: String) async throws -> String {
+        let url = webDomain.appendingPathComponent(path)
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        req.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        req.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
+        let data = try await perform(req)
+        guard let html = String(data: data, encoding: .utf8) else {
+            throw BangumiAPIError.decoding(message: "HTML decode failed")
+        }
+        return html
     }
 
     private func perform(_ req: URLRequest) async throws -> Data {
@@ -154,6 +264,85 @@ public actor BangumiAPIClient: BangumiAPIClientProtocol {
         } catch {
             throw BangumiAPIError.decoding(message: String(describing: error))
         }
+    }
+
+    private func parseComments(html: String) throws -> [BangumiSubjectComment] {
+        let doc = try Kanna.HTML(html: html, encoding: .utf8)
+        return doc.xpath("//div[@id='comment_box']/div[@class='item clearit']").compactMap { node -> BangumiSubjectComment? in
+            let authorName = node.xpath(".//div[@class='text']//a[@class='l']").first?.text?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let body = node.xpath(".//p[@class='comment']").first?.text?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !authorName.isEmpty, !body.isEmpty else { return nil }
+            let avatarStyle = node.xpath(".//a[@class='avatar']/span").first?["style"] ?? ""
+            let avatarURL = absoluteURL(fromStyleBackgroundImage: avatarStyle)
+            let starClass = node.xpath(".//span[contains(@class,'starlight')]").first?["class"] ?? ""
+            let greyNodes = Array(node.xpath(".//small[@class='grey']"))
+            let stateLabel = greyNodes.indices.contains(0)
+                ? (greyNodes[0].text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
+                : ""
+            let publishedAt = greyNodes.indices.contains(1)
+                ? (greyNodes[1].text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
+                : ""
+            return BangumiSubjectComment(
+                id: node["data-item-user"] ?? UUID().uuidString,
+                authorName: authorName,
+                avatarURL: avatarURL,
+                stateLabel: stateLabel.replacingOccurrences(of: "@", with: "").trimmingCharacters(in: .whitespacesAndNewlines),
+                ratingLabel: starClass.replacingOccurrences(of: "starlight ", with: ""),
+                publishedAt: publishedAt.replacingOccurrences(of: "@", with: "").trimmingCharacters(in: .whitespacesAndNewlines),
+                body: body
+            )
+        }
+    }
+
+    private func parseReviews(html: String) throws -> [BangumiSubjectReview] {
+        let doc = try Kanna.HTML(html: html, encoding: .utf8)
+        return doc.xpath("//div[@id='entry_list']/div[@class='item clearit']").compactMap { node -> BangumiSubjectReview? in
+            let titleNode = node.xpath(".//h2[@class='title']/a").first
+            let title = titleNode?.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let href = titleNode?["href"] ?? ""
+            let summary = node.xpath(".//div[@class='content']/a").first?.text?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let authorName = node.xpath(".//div[@class='time']/a[@class='l']").first?.text?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !title.isEmpty, !authorName.isEmpty else { return nil }
+            let metaTexts = node.xpath(".//div[@class='time']").first?.text?
+                .components(separatedBy: "·")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) } ?? []
+            let avatarURL = absoluteURL(from: node.xpath(".//p[@class='cover']//img").first?["src"])
+            return BangumiSubjectReview(
+                id: href.isEmpty ? UUID().uuidString : href,
+                title: title,
+                authorName: authorName,
+                avatarURL: avatarURL,
+                publishedAt: metaTexts.dropFirst().first ?? "",
+                replyCount: metaTexts.dropFirst(2).first ?? "",
+                summary: summary,
+                url: absoluteURL(from: href)
+            )
+        }
+    }
+
+    private func absoluteURL(from value: String?) -> URL? {
+        guard let value, !value.isEmpty else { return nil }
+        if value.hasPrefix("//") {
+            return URL(string: "https:" + value)
+        }
+        if value.hasPrefix("/") {
+            return URL(string: value, relativeTo: webDomain)?.absoluteURL
+        }
+        return URL(string: value)
+    }
+
+    private func absoluteURL(fromStyleBackgroundImage value: String) -> URL? {
+        guard let start = value.range(of: "url(")?.upperBound,
+            let end = value.range(of: ")", range: start..<value.endIndex)?.lowerBound
+        else {
+            return nil
+        }
+        let raw = value[start..<end].trimmingCharacters(in: CharacterSet(charactersIn: "'\""))
+        return absoluteURL(from: String(raw))
     }
 }
 

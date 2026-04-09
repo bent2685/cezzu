@@ -116,7 +116,7 @@ struct CompactRootView: View {
     init(session: CezzuSession) {
         self.session = session
         self._searchModel = State(
-            initialValue: SearchViewModel(store: session.store)
+            initialValue: SearchViewModel(api: session.bangumiAPI)
         )
         self._homeModel = State(
             initialValue: HomeViewModel(api: session.bangumiAPI)
@@ -129,7 +129,7 @@ struct CompactRootView: View {
                 HomeView(
                     model: homeModel,
                     onTapItem: { item in
-                        path.append(Route.bangumiInfo(item))
+                        path.append(Route.detail(item))
                     },
                     onTapSearch: {
                         path.append(Route.search)
@@ -141,9 +141,12 @@ struct CompactRootView: View {
             }
             .tabItem { Label("主页", systemImage: "house") }
 
-            NavigationStack {
-                HistoryView(history: session.history) { _ in
-                    // history navigation handled by future change
+            NavigationStack(path: $path) {
+                HistoryView(history: session.history) { entry in
+                    path.append(Route.historyDetail(historyHint(from: entry)))
+                }
+                .navigationDestination(for: Route.self) { route in
+                    routeView(route)
                 }
             }
             .tabItem { Label("最近观看", systemImage: "clock") }
@@ -166,29 +169,41 @@ struct CompactRootView: View {
         case .home:
             HomeView(
                 model: homeModel,
-                onTapItem: { item in path.append(Route.bangumiInfo(item)) },
+                onTapItem: { item in path.append(Route.detail(item)) },
                 onTapSearch: { path.append(Route.search) }
             )
-        case .bangumiInfo(let item):
-            BangumiInfoView(item: item) { keyword in
-                searchModel.text = keyword
-                Task { await searchModel.submit() }
-                path.append(Route.results(keyword: keyword))
-            }
         case .search:
-            SearchView(model: searchModel) {
+            SearchView(model: searchModel) { item in
+                path.append(Route.detail(item))
+            }
+        case .detail(let item):
+            DetailView(
+                model: DetailViewModel(
+                    item: item,
+                    rules: session.store.enabledRules(),
+                    api: session.bangumiAPI
+                )
+            ) { request in
+                path.append(Route.player(request))
+            } onTapTag: { tag in
+                searchModel.applyTag(tag)
                 Task { await searchModel.submit() }
-                path.append(Route.results(keyword: searchModel.text))
+                path.append(Route.search)
             }
-        case .results:
-            ResultsView(model: searchModel) { result in
-                path.append(Route.detail(result))
-            }
-        case .detail(let result):
-            if let rule = session.store.installedRules.first(where: { $0.name == result.ruleName })?.rule {
-                DetailView(model: DetailViewModel(result: result, rule: rule)) { detail in
-                    path.append(Route.episodes(detail: detail))
-                }
+        case .historyDetail(let hint):
+            DetailView(
+                model: DetailViewModel(
+                    item: hint.item,
+                    rules: session.store.enabledRules(),
+                    api: session.bangumiAPI,
+                    historyHint: hint
+                )
+            ) { request in
+                path.append(Route.player(request))
+            } onTapTag: { tag in
+                searchModel.applyTag(tag)
+                Task { await searchModel.submit() }
+                path.append(Route.search)
             }
         case .episodes(let detail):
             if let rule = session.store.installedRules.first(where: { $0.name == detail.ruleName })?.rule {
@@ -202,13 +217,30 @@ struct CompactRootView: View {
                 coordinator: PlaybackCoordinator(history: session.history),
                 history: session.history
             )
+            #if os(iOS)
+                .toolbar(.hidden, for: .tabBar)
+            #endif
         case .ruleManager, .ruleSources:
             RuleManagerView(store: session.store)
         case .settings:
             SettingsView()
         case .history:
-            HistoryView(history: session.history) { _ in }
+            HistoryView(history: session.history) { entry in
+                path.append(Route.historyDetail(historyHint(from: entry)))
+            }
         }
+    }
+
+    private func historyHint(from entry: WatchHistoryEntry) -> HistoryResumeHint {
+        HistoryResumeHint(
+            bangumiTitle: entry.bangumiTitle,
+            coverURLString: entry.coverURLString,
+            detailURL: URL(string: entry.detailURLString) ?? URL(string: "https://invalid.local")!,
+            ruleName: entry.ruleName,
+            episodeIndex: entry.lastEpisodeIndex,
+            episodeTitle: entry.lastEpisodeTitle,
+            positionMs: entry.lastPositionMs
+        )
     }
 }
 
@@ -246,7 +278,7 @@ struct SplitRootView: View {
     init(session: CezzuSession) {
         self.session = session
         self._searchModel = State(
-            initialValue: SearchViewModel(store: session.store)
+            initialValue: SearchViewModel(api: session.bangumiAPI)
         )
         self._homeModel = State(
             initialValue: HomeViewModel(api: session.bangumiAPI)
@@ -319,11 +351,13 @@ struct SplitRootView: View {
         case .home:
             HomeView(
                 model: homeModel,
-                onTapItem: { item in path.append(Route.bangumiInfo(item)) },
+                onTapItem: { item in path.append(Route.detail(item)) },
                 onTapSearch: { path.append(Route.search) }
             )
         case .history:
-            HistoryView(history: session.history) { _ in }
+            HistoryView(history: session.history) { entry in
+                path.append(Route.historyDetail(historyHint(from: entry)))
+            }
         case .rules:
             RuleManagerView(store: session.store)
         case .settings:
@@ -337,29 +371,41 @@ struct SplitRootView: View {
         case .home:
             HomeView(
                 model: homeModel,
-                onTapItem: { item in path.append(Route.bangumiInfo(item)) },
+                onTapItem: { item in path.append(Route.detail(item)) },
                 onTapSearch: { path.append(Route.search) }
             )
-        case .bangumiInfo(let item):
-            BangumiInfoView(item: item) { keyword in
-                searchModel.text = keyword
-                Task { await searchModel.submit() }
-                path.append(Route.results(keyword: keyword))
-            }
         case .search:
-            SearchView(model: searchModel) {
+            SearchView(model: searchModel) { item in
+                path.append(Route.detail(item))
+            }
+        case .detail(let item):
+            DetailView(
+                model: DetailViewModel(
+                    item: item,
+                    rules: session.store.enabledRules(),
+                    api: session.bangumiAPI
+                )
+            ) { request in
+                path.append(Route.player(request))
+            } onTapTag: { tag in
+                searchModel.applyTag(tag)
                 Task { await searchModel.submit() }
-                path.append(Route.results(keyword: searchModel.text))
+                path.append(Route.search)
             }
-        case .results:
-            ResultsView(model: searchModel) { result in
-                path.append(Route.detail(result))
-            }
-        case .detail(let result):
-            if let rule = session.store.installedRules.first(where: { $0.name == result.ruleName })?.rule {
-                DetailView(model: DetailViewModel(result: result, rule: rule)) { detail in
-                    path.append(Route.episodes(detail: detail))
-                }
+        case .historyDetail(let hint):
+            DetailView(
+                model: DetailViewModel(
+                    item: hint.item,
+                    rules: session.store.enabledRules(),
+                    api: session.bangumiAPI,
+                    historyHint: hint
+                )
+            ) { request in
+                path.append(Route.player(request))
+            } onTapTag: { tag in
+                searchModel.applyTag(tag)
+                Task { await searchModel.submit() }
+                path.append(Route.search)
             }
         case .episodes(let detail):
             if let rule = session.store.installedRules.first(where: { $0.name == detail.ruleName })?.rule {
@@ -376,5 +422,17 @@ struct SplitRootView: View {
         default:
             EmptyView()
         }
+    }
+
+    private func historyHint(from entry: WatchHistoryEntry) -> HistoryResumeHint {
+        HistoryResumeHint(
+            bangumiTitle: entry.bangumiTitle,
+            coverURLString: entry.coverURLString,
+            detailURL: URL(string: entry.detailURLString) ?? URL(string: "https://invalid.local")!,
+            ruleName: entry.ruleName,
+            episodeIndex: entry.lastEpisodeIndex,
+            episodeTitle: entry.lastEpisodeTitle,
+            positionMs: entry.lastPositionMs
+        )
     }
 }
