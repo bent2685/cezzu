@@ -248,6 +248,7 @@ struct CompactRootView: View {
 
 struct SplitRootView: View {
     let session: CezzuSession
+    @Environment(\.colorScheme) private var colorScheme
     @State private var sidebarItem: SidebarItem? = .home
     @State private var path = NavigationPath()
     @State private var searchModel: SearchViewModel
@@ -286,9 +287,6 @@ struct SplitRootView: View {
     }
 
     var body: some View {
-        // 注意：macOS 26 的 NavigationSplitView 默认 sidebar 自动套 Liquid Glass，
-        // 我们故意不加任何 .background(...)。
-        //
         // `columnVisibility` 由 `PlayerChromeController` 驱动：PlayerView 进入
         // 沉浸 / 全屏模式时会把它推到 `.detailOnly`，退出时恢复到 `.all`。
         let visibilityBinding = $columnVisibility
@@ -334,15 +332,25 @@ struct SplitRootView: View {
     }
 
     private var sidebar: some View {
-        List(selection: $sidebarItem) {
-            ForEach(
-                [SidebarItem.home, .history, .rules, .settings]
-            ) { item in
-                Label(item.label, systemImage: item.systemImage)
-                    .tag(item)
+        ZStack {
+            sidebarBackground
+                .ignoresSafeArea()
+            List(selection: $sidebarItem) {
+                ForEach(
+                    [SidebarItem.home, .history, .rules, .settings]
+                ) { item in
+                    Label(item.label, systemImage: item.systemImage)
+                        .tag(item)
+                }
             }
+            .scrollContentBackground(.hidden)
         }
+        .background(sidebarBackground.ignoresSafeArea())
         .navigationTitle("Cezzu")
+    }
+
+    private var sidebarBackground: Color {
+        colorScheme == .dark ? .black : .white
     }
 
     @ViewBuilder
