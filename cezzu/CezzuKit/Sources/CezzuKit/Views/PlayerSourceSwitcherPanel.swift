@@ -239,6 +239,7 @@ struct PlayerSourceSwitcherPanel: View {
     let activeRequest: PlaybackRequest
     let onClose: () -> Void
     let onSelectRequest: (PlaybackRequest) -> Void
+    @State private var episodePage: Int = 0
 
     var body: some View {
         GlassPanel(shape: UnevenRoundedRectangle(
@@ -350,16 +351,30 @@ struct PlayerSourceSwitcherPanel: View {
                     Text("线路")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white)
-                    Picker("播放线路", selection: Binding(
-                        get: { model.selectedRoadIndex },
-                        set: { model.selectRoad($0) }
-                    )) {
+                    FlowLayout(horizontalSpacing: 8, verticalSpacing: 8) {
                         ForEach(detail.roads.indices, id: \.self) { index in
-                            Text(detail.roads[index].label).tag(index)
+                            let isSelected = model.selectedRoadIndex == index
+                            Button {
+                                model.selectRoad(index)
+                                episodePage = 0
+                            } label: {
+                                Text(detail.roads[index].label)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.white.opacity(isSelected ? 1 : 0.82))
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 9)
+                                    .background(
+                                        isSelected ? Color.white.opacity(0.22) : Color.white.opacity(0.08),
+                                        in: Capsule(style: .continuous)
+                                    )
+                                    .overlay {
+                                        Capsule(style: .continuous)
+                                            .stroke(Color.white.opacity(isSelected ? 0.22 : 0.10), lineWidth: 1)
+                                    }
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
-                    .pickerStyle(.segmented)
-                    .tint(.white)
                 }
             }
         case .loading:
@@ -389,13 +404,45 @@ struct PlayerSourceSwitcherPanel: View {
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.62))
             case .loaded:
+                let episodes = model.currentEpisodes
+                let pageSize = 100
+                let totalPages = max(1, (episodes.count + pageSize - 1) / pageSize)
+                let safePage = min(episodePage, totalPages - 1)
+                let pageStart = safePage * pageSize
+                let pageEnd = min(pageStart + pageSize, episodes.count)
+
+                if totalPages > 1 {
+                    FlowLayout(horizontalSpacing: 6, verticalSpacing: 6) {
+                        ForEach(0..<totalPages, id: \.self) { page in
+                            let start = page * pageSize + 1
+                            let end = min((page + 1) * pageSize, episodes.count)
+                            let isSelected = safePage == page
+                            Button {
+                                episodePage = page
+                            } label: {
+                                Text("\(start)-\(end)")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(.white.opacity(isSelected ? 1 : 0.72))
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
+                                    .background(
+                                        isSelected ? Color.white.opacity(0.22) : Color.white.opacity(0.08),
+                                        in: Capsule(style: .continuous)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+
                 ScrollView {
                     LazyVGrid(
                         columns: [GridItem(.adaptive(minimum: 92, maximum: 132), spacing: 10)],
                         spacing: 10
                     ) {
-                        ForEach(Array(model.currentEpisodes.enumerated()), id: \.element.id) { index, episode in
-                            let request = model.playbackRequest(episodeIndex: index)
+                        ForEach(Array(episodes[pageStart..<pageEnd].enumerated()), id: \.element.id) { pageIndex, episode in
+                            let absoluteIndex = pageStart + pageIndex
+                            let request = model.playbackRequest(episodeIndex: absoluteIndex)
                             let isCurrent =
                                 request?.rule.name == activeRequest.rule.name &&
                                 request?.roadIndex == activeRequest.roadIndex &&
@@ -430,5 +477,7 @@ struct PlayerSourceSwitcherPanel: View {
             }
         }
         .frame(maxHeight: .infinity, alignment: .top)
+        .onChange(of: model.selectedRoadIndex) { _, _ in episodePage = 0 }
+        .onChange(of: model.selectedSourceID) { _, _ in episodePage = 0 }
     }
 }

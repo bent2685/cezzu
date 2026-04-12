@@ -526,7 +526,7 @@ private enum DetailStyle {
         switch colorScheme {
         case .dark:
             return DetailPalette(
-                background: Color(red: 0.025, green: 0.026, blue: 0.030),
+                background: Color(red: 0.020, green: 0.020, blue: 0.024),
                 backgroundRaised: Color(red: 0.055, green: 0.058, blue: 0.066),
                 surface: Color(red: 0.075, green: 0.080, blue: 0.092),
                 surfaceRaised: Color(red: 0.105, green: 0.110, blue: 0.125),
@@ -566,6 +566,7 @@ private struct DetailPalette {
 
 public struct DetailView: View {
     @State private var model: DetailViewModel
+    @State private var episodePage: Int = 0
     @Environment(\.colorScheme) private var colorScheme
     var onTapPlay: (PlaybackRequest, SourceSearchCache?) -> Void
     var onTapTag: (String) -> Void
@@ -1114,26 +1115,73 @@ public struct DetailView: View {
                     .foregroundStyle(palette.textSecondary)
             }
         case .loaded(let detail):
+            let episodes = model.currentEpisodes
+            let pageSize = 100
+            let totalPages = max(1, (episodes.count + pageSize - 1) / pageSize)
+            let safePage = min(episodePage, totalPages - 1)
+            let pageStart = safePage * pageSize
+            let pageEnd = min(pageStart + pageSize, episodes.count)
+
             VStack(alignment: .leading, spacing: 16) {
                 if detail.roads.count > 1 {
-                    Picker("播放线路", selection: Binding(
-                        get: { model.selectedRoadIndex },
-                        set: { model.selectRoad($0) }
-                    )) {
+                    FlowLayout(horizontalSpacing: 8, verticalSpacing: 8) {
                         ForEach(detail.roads.indices, id: \.self) { index in
-                            Text(detail.roads[index].label).tag(index)
+                            let isSelected = model.selectedRoadIndex == index
+                            Button {
+                                model.selectRoad(index)
+                                episodePage = 0
+                            } label: {
+                                Text(detail.roads[index].label)
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundStyle(isSelected ? .white : palette.textSecondary)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 10)
+                                    .background(
+                                        isSelected ? DetailStyle.netflixRed.opacity(0.92) : palette.surfaceRaised,
+                                        in: RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
+                                    )
+                                    .overlay {
+                                        RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
+                                            .stroke(isSelected ? DetailStyle.netflixRed : palette.hairline, lineWidth: 1)
+                                    }
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
-                    .pickerStyle(.segmented)
-                    .tint(DetailStyle.netflixRed)
                 }
+
+                if totalPages > 1 {
+                    FlowLayout(horizontalSpacing: 6, verticalSpacing: 6) {
+                        ForEach(0..<totalPages, id: \.self) { page in
+                            let start = page * pageSize + 1
+                            let end = min((page + 1) * pageSize, episodes.count)
+                            let isSelected = safePage == page
+                            Button {
+                                episodePage = page
+                            } label: {
+                                Text("\(start)-\(end)")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(isSelected ? .white : palette.textSecondary)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(
+                                        isSelected ? DetailStyle.netflixRed.opacity(0.72) : palette.surfaceRaised,
+                                        in: Capsule(style: .continuous)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+
                 LazyVGrid(
                     columns: [GridItem(.adaptive(minimum: 96, maximum: 150), spacing: 10)],
                     spacing: 12
                 ) {
-                    ForEach(Array(model.currentEpisodes.enumerated()), id: \.element.id) { index, episode in
+                    ForEach(Array(episodes[pageStart..<pageEnd].enumerated()), id: \.element.id) { pageIndex, episode in
+                        let absoluteIndex = pageStart + pageIndex
                         Button {
-                            if let request = model.playbackRequest(episodeIndex: index) {
+                            if let request = model.playbackRequest(episodeIndex: absoluteIndex) {
                                 onTapPlay(request, model.sourceCache)
                             }
                         } label: {
@@ -1157,6 +1205,8 @@ public struct DetailView: View {
                     }
                 }
             }
+            .onChange(of: model.selectedRoadIndex) { _, _ in episodePage = 0 }
+            .onChange(of: model.selectedSourceID) { _, _ in episodePage = 0 }
         }
     }
 
