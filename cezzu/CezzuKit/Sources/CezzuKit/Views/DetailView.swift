@@ -465,28 +465,34 @@ public struct DetailView: View {
     public var body: some View {
         GeometryReader { proxy in
             let bottomInset = max(112, proxy.safeAreaInsets.bottom + 56)
-            ScrollView {
-                VStack(spacing: 0) {
-                hero
-                    .frame(maxWidth: .infinity)
-                VStack(spacing: 24) {
-                    if !model.tags.isEmpty {
-                        tagListSection
-                    }
-                    tabs
-                    tabContent
-                }
-                .frame(maxWidth: 780)
-                .frame(maxWidth: .infinity)
-                    .padding(.top, 20)
-                }
-            }
-            .contentMargins(.horizontal, 20, for: .scrollContent)
-            .contentMargins(.bottom, bottomInset, for: .scrollContent)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .background {
+            ZStack(alignment: .top) {
                 heroBackdrop(viewportSize: proxy.size)
+                    .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
+                    .clipped()
+
+                ScrollView {
+                    VStack(spacing: 0) {
+                        hero
+                            .frame(maxWidth: .infinity)
+                        VStack(spacing: 24) {
+                            if !model.tags.isEmpty {
+                                tagListSection
+                            }
+                            tabs
+                            tabContent
+                        }
+                        .frame(maxWidth: 780)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 20)
+                    }
+                }
+                .scrollContentBackground(.hidden)
+                .contentMargins(.horizontal, 20, for: .scrollContent)
+                .contentMargins(.bottom, bottomInset, for: .scrollContent)
+                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
             }
+            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
+            .clipped()
         }
         .ignoresSafeArea(edges: .top)
         .task {
