@@ -39,6 +39,9 @@ public struct BangumiGrid<Footer: View>: View {
                     BangumiCard(item: item)
                 }
                 .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .contentShape(Rectangle())
+                .clipped()
                 .task {
                     await onLoadMore(item)
                 }

@@ -24,6 +24,9 @@ public struct ResultsView: View {
                         BangumiCard(item: item)
                     }
                     .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .contentShape(Rectangle())
+                    .clipped()
                 }
                 if model.isSearching && model.results.isEmpty {
                     GlassPanel {
