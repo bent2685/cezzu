@@ -31,12 +31,12 @@ public struct RuleSource: Codable, Hashable, Sendable, Identifiable {
 
     // MARK: Built-ins
 
-    /// Cezzu 官方规则源，指向 `bent2685/cezzu-rule`。
+    /// Cezzu 官方规则源，指向 monorepo 里的 `cezzu-rule/`。
     public static let cezzuRuleOfficial = RuleSource(
         id: UUID(uuidString: "C3220500-0001-0000-0000-000000000001")!,
         name: "Cezzu Rule 官方",
-        indexURL: URL(string: "https://raw.githubusercontent.com/bent2685/cezzu-rule/main/index.json")!,
-        ruleBaseURL: URL(string: "https://raw.githubusercontent.com/bent2685/cezzu-rule/main/rules/")!,
+        indexURL: URL(string: "https://raw.githubusercontent.com/bent2685/cezzu/main/cezzu-rule/index.json")!,
+        ruleBaseURL: URL(string: "https://raw.githubusercontent.com/bent2685/cezzu/main/cezzu-rule/rules/")!,
         mirrorPrefix: nil,
         isEnabled: true,
         isBuiltIn: true
@@ -46,8 +46,8 @@ public struct RuleSource: Codable, Hashable, Sendable, Identifiable {
     public static let cezzuRuleGhfast = RuleSource(
         id: UUID(uuidString: "C3220500-0001-0000-0000-000000000002")!,
         name: "Cezzu Rule 镜像 (ghfast)",
-        indexURL: URL(string: "https://ghfast.top/https://raw.githubusercontent.com/bent2685/cezzu-rule/main/index.json")!,
-        ruleBaseURL: URL(string: "https://ghfast.top/https://raw.githubusercontent.com/bent2685/cezzu-rule/main/rules/")!,
+        indexURL: URL(string: "https://ghfast.top/https://raw.githubusercontent.com/bent2685/cezzu/main/cezzu-rule/index.json")!,
+        ruleBaseURL: URL(string: "https://ghfast.top/https://raw.githubusercontent.com/bent2685/cezzu/main/cezzu-rule/rules/")!,
         mirrorPrefix: "https://ghfast.top/",
         isEnabled: false,
         isBuiltIn: true

@@ -59,14 +59,12 @@ public final class RuleSourceStore {
         self.context = context
     }
 
-    /// 启动时调用。如果库里没有内置源，自动种子两条 built-in。
+    /// 启动时调用。按固定 ID 补齐并迁移内置源，保留用户的启用状态。
     public func ensureSeedSources() throws {
         let allDescriptor = FetchDescriptor<RuleSourceRecord>()
         let existing = try context.fetch(allDescriptor)
-        if !existing.isEmpty { return }
 
-        let seeds = [RuleSource.cezzuRuleOfficial, RuleSource.cezzuRuleGhfast]
-        for source in seeds {
+        Self.reconcileSeedSources(existing: existing) { source in
             let record = RuleSourceRecord(
                 id: source.id,
                 name: source.name,
@@ -79,6 +77,22 @@ public final class RuleSourceStore {
             context.insert(record)
         }
         try context.save()
+    }
+
+    static func reconcileSeedSources(existing: [RuleSourceRecord], insert: (RuleSource) -> Void) {
+        let seeds = [RuleSource.cezzuRuleOfficial, RuleSource.cezzuRuleGhfast]
+        for source in seeds {
+            if let record = existing.first(where: { $0.id == source.id }) {
+                record.name = source.name
+                record.indexURLString = source.indexURL.absoluteString
+                record.ruleBaseURLString = source.ruleBaseURL.absoluteString
+                record.mirrorPrefix = source.mirrorPrefix
+                record.isBuiltIn = source.isBuiltIn
+                continue
+            }
+
+            insert(source)
+        }
     }
 
     public func load() throws -> [RuleSource] {
