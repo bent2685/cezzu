@@ -253,6 +253,7 @@ struct SplitRootView: View {
     @State private var searchModel: SearchViewModel
     @State private var homeModel: HomeViewModel
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var sidebarBackdropItem: BangumiItem?
 
     enum SidebarItem: Hashable, Identifiable {
         case home, history, rules, settings
@@ -322,19 +323,25 @@ struct SplitRootView: View {
                 }
             #endif
         }()
-        return content.environment(
-            \.playerChromeController,
-            PlayerChromeController { hidden in
-                withAnimation(.easeInOut(duration: 0.25)) {
-                    visibilityBinding.wrappedValue =
-                        hidden ? .detailOnly : .all
+        return content
+            .environment(
+                \.playerChromeController,
+                PlayerChromeController { hidden in
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        visibilityBinding.wrappedValue =
+                            hidden ? .detailOnly : .all
+                    }
+                }
+            )
+            .onChange(of: path.count) { _, count in
+                if count == 0 {
+                    sidebarBackdropItem = nil
                 }
             }
-        )
     }
 
     private var sidebar: some View {
-        List(selection: $sidebarItem) {
+        List(selection: sidebarSelection) {
             ForEach(
                 [SidebarItem.home, .history, .rules, .settings]
             ) { item in
@@ -343,6 +350,43 @@ struct SplitRootView: View {
             }
         }
         .navigationTitle("Cezzu")
+        .scrollContentBackground(.hidden)
+        .background { sidebarBackdrop }
+    }
+
+    @ViewBuilder
+    private var sidebarBackdrop: some View {
+        ZStack {
+            Color(red: 0.08, green: 0.12, blue: 0.18)
+            if let item = sidebarBackdropItem {
+                AsyncImage(url: URL(string: item.images.best)) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .opacity(0.22)
+                    default:
+                        Color.clear
+                    }
+                }
+                Color(red: 0.08, green: 0.12, blue: 0.18).opacity(0.68)
+            }
+        }
+        .ignoresSafeArea()
+    }
+
+    private var sidebarSelection: Binding<SidebarItem?> {
+        Binding(
+            get: { sidebarItem },
+            set: { newValue in
+                if newValue != sidebarItem {
+                    path = NavigationPath()
+                    sidebarBackdropItem = nil
+                }
+                sidebarItem = newValue
+            }
+        )
     }
 
     @ViewBuilder
@@ -351,12 +395,20 @@ struct SplitRootView: View {
         case .home:
             HomeView(
                 model: homeModel,
-                onTapItem: { item in path.append(Route.detail(item)) },
-                onTapSearch: { path.append(Route.search) }
+                onTapItem: { item in
+                    sidebarBackdropItem = item
+                    path.append(Route.detail(item))
+                },
+                onTapSearch: {
+                    sidebarBackdropItem = nil
+                    path.append(Route.search)
+                }
             )
         case .history:
             HistoryView(history: session.history) { entry in
-                path.append(Route.historyDetail(historyHint(from: entry)))
+                let hint = historyHint(from: entry)
+                sidebarBackdropItem = hint.item
+                path.append(Route.historyDetail(hint))
             }
         case .rules:
             RuleManagerView(store: session.store)
@@ -371,11 +423,18 @@ struct SplitRootView: View {
         case .home:
             HomeView(
                 model: homeModel,
-                onTapItem: { item in path.append(Route.detail(item)) },
-                onTapSearch: { path.append(Route.search) }
+                onTapItem: { item in
+                    sidebarBackdropItem = item
+                    path.append(Route.detail(item))
+                },
+                onTapSearch: {
+                    sidebarBackdropItem = nil
+                    path.append(Route.search)
+                }
             )
         case .search:
             SearchView(model: searchModel) { item in
+                sidebarBackdropItem = item
                 path.append(Route.detail(item))
             }
         case .detail(let item):
@@ -390,6 +449,7 @@ struct SplitRootView: View {
             } onTapTag: { tag in
                 searchModel.applyTag(tag)
                 Task { await searchModel.submit() }
+                sidebarBackdropItem = nil
                 path.append(Route.search)
             }
         case .historyDetail(let hint):
@@ -405,6 +465,7 @@ struct SplitRootView: View {
             } onTapTag: { tag in
                 searchModel.applyTag(tag)
                 Task { await searchModel.submit() }
+                sidebarBackdropItem = nil
                 path.append(Route.search)
             }
         case .episodes(let detail):
