@@ -447,6 +447,19 @@ enum DetailBackdropColorSampler {
     }
 }
 
+private enum DetailStyle {
+    static let background = Color(red: 0.025, green: 0.026, blue: 0.030)
+    static let backgroundRaised = Color(red: 0.055, green: 0.058, blue: 0.066)
+    static let surface = Color(red: 0.075, green: 0.080, blue: 0.092)
+    static let surfaceRaised = Color(red: 0.105, green: 0.110, blue: 0.125)
+    static let netflixRed = Color(red: 0.90, green: 0.02, blue: 0.05)
+    static let textPrimary = Color.white
+    static let textSecondary = Color.white.opacity(0.70)
+    static let textTertiary = Color.white.opacity(0.48)
+    static let hairline = Color.white.opacity(0.10)
+    static let cornerRadius: CGFloat = 8
+}
+
 public struct DetailView: View {
     @Bindable var model: DetailViewModel
     var onTapPlay: (PlaybackRequest) -> Void
@@ -465,34 +478,32 @@ public struct DetailView: View {
     public var body: some View {
         GeometryReader { proxy in
             let bottomInset = max(112, proxy.safeAreaInsets.bottom + 56)
-            ZStack(alignment: .top) {
-                heroBackdrop(viewportSize: proxy.size)
-                    .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
-                    .clipped()
-
+            ZStack(alignment: .topLeading) {
+                detailBackdrop(viewportSize: proxy.size)
+                    .frame(width: proxy.size.width, height: proxy.size.height)
                 ScrollView {
-                    VStack(spacing: 0) {
-                        hero
-                            .frame(maxWidth: .infinity)
-                        VStack(spacing: 24) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        hero(viewportSize: proxy.size)
+                        VStack(alignment: .leading, spacing: 28) {
                             if !model.tags.isEmpty {
                                 tagListSection
                             }
                             tabs
                             tabContent
                         }
-                        .frame(maxWidth: 780)
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 20)
+                        .frame(maxWidth: 1080, alignment: .leading)
+                        .padding(.horizontal, horizontalPadding(for: proxy.size.width))
+                        .padding(.bottom, bottomInset)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .scrollContentBackground(.hidden)
-                .contentMargins(.horizontal, 20, for: .scrollContent)
-                .contentMargins(.bottom, bottomInset, for: .scrollContent)
+                .contentMargins(.horizontal, 0, for: .scrollContent)
                 .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
             .clipped()
+            .environment(\.colorScheme, .dark)
         }
         .ignoresSafeArea(edges: .top)
         .task {
@@ -501,84 +512,125 @@ public struct DetailView: View {
     }
 
     @ViewBuilder
-    private var hero: some View {
-        ZStack {
-            VStack(spacing: 18) {
-                Spacer(minLength: 90)
-                poster
-                VStack(spacing: 10) {
-                    Text(model.item.displayName)
-                        .font(.system(size: 32, weight: .heavy))
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(.white)
-                    if model.item.name != model.item.displayName {
-                        Text(model.item.name)
-                            .font(.subheadline)
-                            .foregroundStyle(.white.opacity(0.7))
-                            .multilineTextAlignment(.center)
-                    }
-                    HStack(spacing: 8) {
-                        if model.item.ratingScore > 0 {
-                            Label(String(format: "%.1f", model.item.ratingScore), systemImage: "star.fill")
-                                .foregroundStyle(.yellow)
-                        }
-                        Text(model.primaryMeta)
-                            .foregroundStyle(.white.opacity(0.82))
-                    }
-                    .font(.footnote.weight(.medium))
-                    .multilineTextAlignment(.center)
-                }
-                heroActionBar
-                Spacer(minLength: 26)
-            }
-            .frame(maxWidth: 520)
-            .padding(.horizontal, 24)
-        }
-    }
-
-    @ViewBuilder
-    private func heroBackdrop(viewportSize: CGSize) -> some View {
-        let backdropHeight = max(viewportSize.height + 220, 980)
-        ZStack(alignment: .top) {
-            model.backdropColor.opacity(0.28)
+    private func detailBackdrop(viewportSize: CGSize) -> some View {
+        ZStack(alignment: .topTrailing) {
+            DetailStyle.background
                 .ignoresSafeArea()
             backgroundCover
                 .frame(
-                    width: viewportSize.width,
-                    height: backdropHeight
+                    width: max(viewportSize.width * 0.72, 620),
+                    height: max(viewportSize.height * 0.72, 540)
                 )
-                .ignoresSafeArea()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .clipped()
+                .opacity(0.82)
+            LinearGradient(
+                colors: [
+                    DetailStyle.background,
+                    DetailStyle.background.opacity(0.96),
+                    DetailStyle.background.opacity(0.55),
+                    Color.clear,
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .ignoresSafeArea()
             LinearGradient(
                 colors: [
                     Color.clear,
-                    model.backdropColor.opacity(0.16),
-                    model.backdropColor.opacity(0.42),
-                    model.backdropColor.opacity(0.82),
+                    DetailStyle.background.opacity(0.62),
+                    DetailStyle.background,
                 ],
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .frame(
-                width: viewportSize.width,
-                height: backdropHeight
-            )
             .ignoresSafeArea()
-            if viewportSize.width > 700 {
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.08, green: 0.11, blue: 0.16).opacity(0.72),
-                        model.backdropColor.opacity(0.20),
-                        Color.clear,
-                    ],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-                .frame(width: 180, height: backdropHeight)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .ignoresSafeArea()
-            }
+            LinearGradient(
+                colors: [
+                    DetailStyle.background.opacity(0.98),
+                    Color.clear,
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 118)
+            .frame(maxHeight: .infinity, alignment: .top)
+            .ignoresSafeArea()
         }
         .allowsHitTesting(false)
+    }
+
+    @ViewBuilder
+    private func hero(viewportSize: CGSize) -> some View {
+        let isWide = viewportSize.width >= 760
+        Group {
+            if isWide {
+                HStack(alignment: .bottom, spacing: 30) {
+                    poster
+                    heroCopy(titleSize: 44)
+                        .frame(maxWidth: 720, alignment: .leading)
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 22) {
+                    poster
+                    heroCopy(titleSize: 32)
+                }
+            }
+        }
+        .padding(.top, 94)
+        .padding(.horizontal, horizontalPadding(for: viewportSize.width))
+        .padding(.bottom, 42)
+        .frame(maxWidth: .infinity, minHeight: heroHeight(for: viewportSize.width), alignment: .bottomLeading)
+    }
+
+    @ViewBuilder
+    private func heroCopy(titleSize: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            if model.item.name != model.item.displayName {
+                Text(model.item.name)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(DetailStyle.textSecondary)
+                    .lineLimit(2)
+            }
+            Text(model.item.displayName)
+                .font(.system(size: titleSize, weight: .black))
+                .foregroundStyle(DetailStyle.textPrimary)
+                .lineLimit(3)
+                .minimumScaleFactor(0.82)
+            heroMeta
+            if !model.item.summary.isEmpty {
+                Text(model.item.summary)
+                    .font(.callout)
+                    .lineSpacing(4)
+                    .foregroundStyle(DetailStyle.textSecondary)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            heroActionBar
+        }
+    }
+
+    @ViewBuilder
+    private var heroMeta: some View {
+        WrapLayout(spacing: 10, lineSpacing: 8) {
+            if model.item.ratingScore > 0 {
+                Label(String(format: "%.1f", model.item.ratingScore), systemImage: "star.fill")
+                    .foregroundStyle(.yellow)
+            }
+            if !model.item.airDate.isEmpty {
+                metadataText(model.item.airDate)
+            }
+            if model.item.rank > 0 {
+                metadataText("Rank #\(model.item.rank)")
+            }
+        }
+        .font(.subheadline.weight(.bold))
+    }
+
+    @ViewBuilder
+    private func metadataText(_ value: String) -> some View {
+        Text(value)
+            .foregroundStyle(DetailStyle.textSecondary)
     }
 
     @ViewBuilder
@@ -590,25 +642,23 @@ public struct DetailView: View {
                 image
                     .resizable()
                     .aspectRatio(contentMode: .fill)
-                    .scaleEffect(1.04)
-                    .saturation(0.9)
-                    .opacity(0.22)
+                    .saturation(0.88)
+                    .brightness(-0.04)
             default:
                 Rectangle()
                     .fill(
                         LinearGradient(
                             colors: [
-                                model.backdropColor,
-                                model.backdropColor.opacity(0.68),
-                                model.backdropColor.opacity(0.34),
+                                model.backdropColor.opacity(0.80),
+                                DetailStyle.backgroundRaised,
+                                DetailStyle.background,
                             ],
-                            startPoint: .top,
-                            endPoint: .bottom
+                            startPoint: .topTrailing,
+                            endPoint: .bottomLeading
                         )
                     )
             }
         }
-        .clipped()
     }
 
     @ViewBuilder
@@ -622,26 +672,26 @@ public struct DetailView: View {
                     .aspectRatio(contentMode: .fill)
             default:
                 Rectangle()
-                    .fill(Color.white.opacity(0.08))
+                    .fill(DetailStyle.surfaceRaised)
                     .overlay {
                         Image(systemName: "tv")
                             .font(.system(size: 32, weight: .light))
-                            .foregroundStyle(.white.opacity(0.6))
+                            .foregroundStyle(DetailStyle.textTertiary)
                     }
             }
         }
-        .frame(width: 182, height: 252)
-        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .frame(width: 170, height: 238)
+        .clipShape(RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.18), lineWidth: 1)
+            RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
+                .strokeBorder(DetailStyle.hairline, lineWidth: 1)
         }
-        .shadow(color: .black.opacity(0.35), radius: 30, y: 18)
+        .shadow(color: .black.opacity(0.55), radius: 26, y: 16)
     }
 
     @ViewBuilder
     private var heroActionBar: some View {
-        VStack(spacing: 14) {
+        VStack(alignment: .leading, spacing: 14) {
             Button {
                 if let request = model.playbackRequestForResume() ?? model.playbackRequestForFirstEpisode() {
                     onTapPlay(request)
@@ -650,39 +700,62 @@ public struct DetailView: View {
                 HStack(spacing: 10) {
                     Image(systemName: model.playbackRequestForResume() == nil ? "play.fill" : "arrow.clockwise")
                     Text(primaryActionTitle)
-                        .fontWeight(.semibold)
+                        .fontWeight(.bold)
                 }
-                .foregroundStyle(Color.black)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-                .background(Color.white, in: Capsule())
+                .foregroundStyle(.white)
+                .frame(minWidth: 160, minHeight: 48)
+                .padding(.horizontal, 18)
+                .background(
+                    DetailStyle.netflixRed,
+                    in: RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
+                )
             }
             .buttonStyle(.plain)
             .disabled(model.playbackRequestForResume() == nil && model.playbackRequestForFirstEpisode() == nil)
+            .opacity(model.playbackRequestForResume() == nil && model.playbackRequestForFirstEpisode() == nil ? 0.45 : 1)
 
-            HStack(spacing: 20) {
-                iconAction(title: "已选源", systemImage: "checkmark.circle", subtitle: model.selectedSource?.ruleName ?? "暂无")
-                iconAction(title: "线路", systemImage: "square.stack.3d.up", subtitle: selectedRoadLabel)
-                iconAction(title: "剧集", systemImage: "film.stack", subtitle: "\(model.currentEpisodes.count)")
+            WrapLayout(spacing: 10, lineSpacing: 10) {
+                statPill(title: "已选源", value: model.selectedSource?.ruleName ?? "暂无")
+                statPill(title: "线路", value: selectedRoadLabel)
+                statPill(title: "剧集", value: "\(model.currentEpisodes.count)")
             }
         }
     }
 
     @ViewBuilder
-    private func iconAction(title: String, systemImage: String, subtitle: String) -> some View {
-        VStack(spacing: 8) {
-            Image(systemName: systemImage)
-                .font(.headline)
-                .foregroundStyle(.white.opacity(0.92))
+    private func statPill(title: String, value: String) -> some View {
+        HStack(spacing: 8) {
             Text(title)
-                .font(.caption2)
-                .foregroundStyle(.white.opacity(0.55))
-            Text(subtitle)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.white.opacity(0.85))
+                .foregroundStyle(DetailStyle.textTertiary)
+            Text(value)
+                .foregroundStyle(DetailStyle.textPrimary)
                 .lineLimit(1)
         }
-        .frame(minWidth: 52)
+        .font(.caption.weight(.bold))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            DetailStyle.surface.opacity(0.78),
+            in: RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
+                .stroke(DetailStyle.hairline, lineWidth: 1)
+        }
+    }
+
+    private func heroHeight(for width: CGFloat) -> CGFloat {
+        width >= 760 ? 560 : 650
+    }
+
+    private func horizontalPadding(for width: CGFloat) -> CGFloat {
+        if width >= 1100 {
+            return 64
+        }
+        if width >= 760 {
+            return 44
+        }
+        return 24
     }
 
     private var selectedRoadLabel: String {
@@ -704,21 +777,23 @@ public struct DetailView: View {
     @ViewBuilder
     private var tabs: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
+            HStack(spacing: 6) {
                 ForEach(DetailTab.allCases, id: \.self) { tab in
                     let selected = model.selectedTab == tab
                     Button {
                         Task { await model.selectTab(tab) }
                     } label: {
-                        Text(tab.title)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(selected ? .primary : .secondary)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .glassBackground(
-                                in: Capsule(),
-                                tint: selected ? .white.opacity(0.18) : .clear
-                            )
+                        VStack(spacing: 8) {
+                            Text(tab.title)
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(selected ? DetailStyle.textPrimary : DetailStyle.textSecondary)
+                            Rectangle()
+                                .fill(selected ? DetailStyle.netflixRed : Color.clear)
+                                .frame(height: 3)
+                        }
+                        .frame(minWidth: 72)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 8)
                     }
                     .buttonStyle(.plain)
                 }
@@ -730,7 +805,7 @@ public struct DetailView: View {
     @ViewBuilder
     private var tagListSection: some View {
         overviewSection(title: "标签") {
-            WrapLayout(spacing: 10, lineSpacing: 10) {
+            WrapLayout(spacing: 8, lineSpacing: 8) {
                 ForEach(model.tags, id: \.name) { tag in
                     Button {
                         onTapTag(tag.name)
@@ -738,12 +813,20 @@ public struct DetailView: View {
                         HStack(spacing: 6) {
                             Text(tag.name)
                             Text("\(tag.count)")
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(DetailStyle.textTertiary)
                         }
                         .font(.caption.weight(.medium))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .glassBackground(in: Capsule())
+                        .foregroundStyle(DetailStyle.textSecondary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(
+                            DetailStyle.surfaceRaised.opacity(0.88),
+                            in: RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
+                        )
+                        .overlay {
+                            RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
+                                .stroke(DetailStyle.hairline, lineWidth: 1)
+                        }
                     }
                     .buttonStyle(.plain)
                 }
@@ -764,7 +847,7 @@ public struct DetailView: View {
                         .foregroundStyle(.orange)
                     Text(error)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DetailStyle.textSecondary)
                         .multilineTextAlignment(.center)
                 }
             }
@@ -791,7 +874,8 @@ public struct DetailView: View {
                 overviewSection(title: "简介") {
                     Text(model.item.summary)
                         .font(.body)
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(DetailStyle.textSecondary)
+                        .lineSpacing(5)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -810,8 +894,8 @@ public struct DetailView: View {
     private func overviewSection<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(title)
-                .font(.headline)
-                .foregroundStyle(.white.opacity(0.9))
+                .font(.title3.weight(.bold))
+                .foregroundStyle(DetailStyle.textPrimary)
             centeredPanel(content: content)
         }
     }
@@ -820,27 +904,32 @@ public struct DetailView: View {
     private var sourcesContent: some View {
         if model.isSearchingSources {
             ProgressView("正在匹配可播放源…")
+                .tint(DetailStyle.textPrimary)
         } else if model.sources.isEmpty {
             Text(model.sourceSearchFailed ?? "暂无可播放源")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DetailStyle.textSecondary)
         } else {
             VStack(alignment: .leading, spacing: 14) {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
+                    HStack(spacing: 8) {
                         ForEach(model.sources) { source in
                             let isSelected = model.selectedSource?.id == source.id
                             Button {
                                 Task { await model.selectSource(source.id) }
                             } label: {
                                 Text(source.ruleName)
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(isSelected ? .primary : .secondary)
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundStyle(isSelected ? DetailStyle.textPrimary : DetailStyle.textSecondary)
                                     .padding(.horizontal, 14)
                                     .padding(.vertical, 10)
-                                    .glassBackground(
-                                        in: Capsule(),
-                                        tint: isSelected ? .accentColor.opacity(0.22) : .clear
+                                    .background(
+                                        isSelected ? DetailStyle.netflixRed.opacity(0.92) : DetailStyle.surfaceRaised,
+                                        in: RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
                                     )
+                                    .overlay {
+                                        RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
+                                            .stroke(isSelected ? DetailStyle.netflixRed : DetailStyle.hairline, lineWidth: 1)
+                                    }
                             }
                             .buttonStyle(.plain)
                         }
@@ -862,16 +951,17 @@ public struct DetailView: View {
         switch model.selectedSourceState {
         case .idle:
             Text("请选择一个播放源。")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DetailStyle.textSecondary)
         case .loading:
             ProgressView("正在拉取剧集…")
+                .tint(DetailStyle.textPrimary)
         case .failed(let message):
             VStack(alignment: .leading, spacing: 8) {
                 Label("剧集加载失败", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.orange)
                 Text(message)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DetailStyle.textSecondary)
             }
         case .loaded(let detail):
             VStack(alignment: .leading, spacing: 16) {
@@ -885,9 +975,10 @@ public struct DetailView: View {
                         }
                     }
                     .pickerStyle(.segmented)
+                    .tint(DetailStyle.netflixRed)
                 }
                 LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 90, maximum: 140), spacing: 12)],
+                    columns: [GridItem(.adaptive(minimum: 96, maximum: 150), spacing: 10)],
                     spacing: 12
                 ) {
                     ForEach(Array(model.currentEpisodes.enumerated()), id: \.element.id) { index, episode in
@@ -898,15 +989,19 @@ public struct DetailView: View {
                         } label: {
                             Text(episode.title)
                                 .font(.caption.weight(.semibold))
-                                .foregroundStyle(.primary)
+                                .foregroundStyle(DetailStyle.textPrimary)
                                 .multilineTextAlignment(.center)
                                 .lineLimit(2)
-                                .frame(maxWidth: .infinity, minHeight: 58)
+                                .frame(maxWidth: .infinity, minHeight: 56)
                                 .padding(.horizontal, 10)
-                                .glassBackground(
-                                    in: RoundedRectangle(cornerRadius: 16, style: .continuous),
-                                    tint: .white.opacity(0.04)
+                                .background(
+                                    DetailStyle.surfaceRaised,
+                                    in: RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
                                 )
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
+                                        .stroke(DetailStyle.hairline, lineWidth: 1)
+                                }
                         }
                         .buttonStyle(.plain)
                     }
@@ -920,7 +1015,7 @@ public struct DetailView: View {
         if model.comments.isEmpty {
             centeredPanel {
                 Text("暂无吐槽")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DetailStyle.textSecondary)
             }
         } else {
             VStack(spacing: 14) {
@@ -936,7 +1031,7 @@ public struct DetailView: View {
                                     Spacer()
                                     Text(comment.publishedAt)
                                         .font(.caption)
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(DetailStyle.textTertiary)
                                 }
                                 HStack(spacing: 8) {
                                     if !comment.stateLabel.isEmpty {
@@ -947,7 +1042,7 @@ public struct DetailView: View {
                                     }
                                 }
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(DetailStyle.textTertiary)
                                 Text(comment.body)
                                     .font(.body)
                                     .fixedSize(horizontal: false, vertical: true)
@@ -965,7 +1060,7 @@ public struct DetailView: View {
         if model.characters.isEmpty {
             centeredPanel {
                 Text("暂无角色数据")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DetailStyle.textSecondary)
             }
         } else {
             VStack(spacing: 16) {
@@ -974,17 +1069,17 @@ public struct DetailView: View {
                         HStack(alignment: .top, spacing: 14) {
                             avatar(url: URL(string: character.images.best), title: character.name)
                                 .frame(width: 64, height: 86)
-                                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                                .clipShape(RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous))
                             VStack(alignment: .leading, spacing: 8) {
                                 Text(character.name)
                                     .font(.headline)
                                 Text(character.relation)
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(DetailStyle.textTertiary)
                                 if !character.summary.isEmpty {
                                     Text(character.summary)
                                         .font(.caption)
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(DetailStyle.textSecondary)
                                         .lineLimit(4)
                                 }
                                 if let actor = character.actors.first {
@@ -1005,7 +1100,7 @@ public struct DetailView: View {
         if model.reviews.isEmpty {
             centeredPanel {
                 Text("暂无评论")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DetailStyle.textSecondary)
             }
         } else {
             VStack(spacing: 14) {
@@ -1027,7 +1122,7 @@ public struct DetailView: View {
                                     }
                                 }
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(DetailStyle.textTertiary)
                                 if !review.summary.isEmpty {
                                     Text(review.summary)
                                         .font(.body)
@@ -1047,7 +1142,7 @@ public struct DetailView: View {
         if model.staff.isEmpty {
             centeredPanel {
                 Text("暂无制作人员数据")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DetailStyle.textSecondary)
             }
         } else {
             VStack(spacing: 14) {
@@ -1062,17 +1157,17 @@ public struct DetailView: View {
                                     Spacer()
                                     Text(person.relation)
                                         .font(.caption)
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(DetailStyle.textTertiary)
                                 }
                                 if !person.career.isEmpty {
                                     Text(person.career.joined(separator: " · "))
                                         .font(.caption)
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(DetailStyle.textTertiary)
                                 }
                                 if !person.eps.isEmpty {
                                     Text(person.eps)
                                         .font(.caption)
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(DetailStyle.textTertiary)
                                 }
                             }
                         }
@@ -1085,8 +1180,16 @@ public struct DetailView: View {
 
     @ViewBuilder
     private func centeredPanel<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        GlassPanel {
-            content()
+        content()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(18)
+            .background(
+                DetailStyle.surface.opacity(0.90),
+                in: RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
+                    .stroke(DetailStyle.hairline, lineWidth: 1)
         }
         .frame(maxWidth: .infinity)
     }
@@ -1107,17 +1210,17 @@ public struct DetailView: View {
                     .resizable()
                     .aspectRatio(contentMode: .fill)
             default:
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color.white.opacity(0.08))
+                RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
+                    .fill(DetailStyle.surfaceRaised)
                     .overlay {
                         Text(String(title.prefix(1)))
                             .font(.headline.weight(.bold))
-                            .foregroundStyle(.white.opacity(0.72))
+                            .foregroundStyle(DetailStyle.textSecondary)
                     }
             }
         }
         .clipped()
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous))
     }
 
     private func formatMillis(_ ms: Int) -> String {
