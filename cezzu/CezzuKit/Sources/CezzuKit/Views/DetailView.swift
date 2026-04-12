@@ -494,7 +494,7 @@ private struct DetailPalette {
 }
 
 public struct DetailView: View {
-    @Bindable var model: DetailViewModel
+    @State private var model: DetailViewModel
     @Environment(\.colorScheme) private var colorScheme
     var onTapPlay: (PlaybackRequest) -> Void
     var onTapTag: (String) -> Void
@@ -504,7 +504,7 @@ public struct DetailView: View {
         onTapPlay: @escaping (PlaybackRequest) -> Void,
         onTapTag: @escaping (String) -> Void
     ) {
-        self.model = model
+        _model = State(initialValue: model)
         self.onTapPlay = onTapPlay
         self.onTapTag = onTapTag
     }
