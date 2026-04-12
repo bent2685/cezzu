@@ -7,6 +7,7 @@ public struct PlayerView: View {
     @State private var coordinator: PlaybackCoordinator
     public let request: PlaybackRequest
     public let history: HistoryStore?
+    private let onClose: (() -> Void)?
 
     @Environment(\.playerChromeController) private var chrome
     @Environment(\.playerPresentationController) private var presentation
@@ -22,10 +23,12 @@ public struct PlayerView: View {
     public init(
         request: PlaybackRequest,
         coordinator: PlaybackCoordinator,
-        history: HistoryStore?
+        history: HistoryStore?,
+        onClose: (() -> Void)? = nil
     ) {
         self.request = request
         self.history = history
+        self.onClose = onClose
         self._coordinator = State(initialValue: coordinator)
     }
 
@@ -51,7 +54,7 @@ public struct PlayerView: View {
                             size: 42,
                             font: .subheadline
                         ) {
-                            dismiss()
+                            close()
                         }
                         Spacer()
                     }
@@ -393,6 +396,14 @@ public struct PlayerView: View {
         chrome.setSidebarHidden(next)
         presentation.setSystemFullscreen(next)
         revealControlsTemporarily()
+    }
+
+    private func close() {
+        if let onClose {
+            onClose()
+        } else {
+            dismiss()
+        }
     }
 
     private func formatTime(_ seconds: TimeInterval) -> String {

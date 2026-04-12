@@ -287,55 +287,11 @@ struct SplitRootView: View {
     }
 
     var body: some View {
-        // `columnVisibility` 由 `PlayerChromeController` 驱动：PlayerView 进入
-        // 沉浸 / 全屏模式时会把它推到 `.detailOnly`，退出时恢复到 `.all`。
-        let visibilityBinding = $columnVisibility
-        let content: some View = {
-            #if os(macOS)
-                // macOS：两列布局（侧边栏 + 右侧内容），不要中间那列
-                return NavigationSplitView(columnVisibility: visibilityBinding) {
-                    sidebar
-                } detail: {
-                    NavigationStack(path: $path) {
-                        rootContent
-                            .navigationDestination(for: Route.self) { route in
-                                navigationDestination(for: route)
-                            }
-                    }
-                }
-            #else
-                // iPad：保留三列布局
-                return NavigationSplitView(columnVisibility: visibilityBinding) {
-                    sidebar
-                } content: {
-                    NavigationStack(path: $path) {
-                        rootContent
-                            .navigationDestination(for: Route.self) { route in
-                                navigationDestination(for: route)
-                            }
-                    }
-                } detail: {
-                    Text("选择左侧任一条目开始")
-                        .foregroundStyle(.secondary)
-                }
-            #endif
-        }()
-        return content
-            .background {
-                if showsDetailChromeFill {
-                    detailChromeFillColor
-                        .ignoresSafeArea()
-                }
-            }
-            .environment(
-                \.playerChromeController,
-                PlayerChromeController { hidden in
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        visibilityBinding.wrappedValue =
-                            hidden ? .detailOnly : .all
-                    }
-                }
-            )
+        if let playerRequest = activePlayerRequest {
+            standalonePlayer(for: playerRequest)
+        } else {
+            splitNavigation
+        }
     }
 
     private var sidebar: some View {
@@ -361,6 +317,74 @@ struct SplitRootView: View {
         default:
             return false
         }
+    }
+
+    private var activePlayerRequest: PlaybackRequest? {
+        guard case .player(let request) = path.last else { return nil }
+        return request
+    }
+
+    @ViewBuilder
+    private var splitNavigation: some View {
+        // `columnVisibility` 由 `PlayerChromeController` 驱动：PlayerView 进入
+        // 沉浸 / 全屏模式时会把它推到 `.detailOnly`，退出时恢复到 `.all`。
+        let visibilityBinding = $columnVisibility
+        let content: some View = {
+            #if os(macOS)
+                return NavigationSplitView(columnVisibility: visibilityBinding) {
+                    sidebar
+                } detail: {
+                    NavigationStack(path: $path) {
+                        rootContent
+                            .navigationDestination(for: Route.self) { route in
+                                navigationDestination(for: route)
+                            }
+                    }
+                }
+            #else
+                return NavigationSplitView(columnVisibility: visibilityBinding) {
+                    sidebar
+                } content: {
+                    NavigationStack(path: $path) {
+                        rootContent
+                            .navigationDestination(for: Route.self) { route in
+                                navigationDestination(for: route)
+                            }
+                    }
+                } detail: {
+                    Text("选择左侧任一条目开始")
+                        .foregroundStyle(.secondary)
+                }
+            #endif
+        }()
+        content
+            .background {
+                if showsDetailChromeFill {
+                    detailChromeFillColor
+                        .ignoresSafeArea()
+                }
+            }
+            .environment(
+                \.playerChromeController,
+                PlayerChromeController { hidden in
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        visibilityBinding.wrappedValue =
+                            hidden ? .detailOnly : .all
+                    }
+                }
+            )
+    }
+
+    private func standalonePlayer(for request: PlaybackRequest) -> some View {
+        PlayerView(
+            request: request,
+            coordinator: PlaybackCoordinator(history: session.history),
+            history: session.history,
+            onClose: {
+                guard !path.isEmpty else { return }
+                path.removeLast()
+            }
+        )
     }
 
     @ViewBuilder
