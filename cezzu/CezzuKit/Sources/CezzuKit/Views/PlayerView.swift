@@ -16,7 +16,9 @@ public struct PlayerView: View {
     @Environment(RuleStoreCoordinator.self) private var ruleStore
     @Environment(\.playerChromeController) private var chrome
     @Environment(\.playerPresentationController) private var presentation
+    @Environment(\.playerPictureInPictureController) private var pictureInPicture
     @Environment(\.playerSystemPlaybackController) private var systemPlayback
+    @Environment(\.playerInteractionController) private var interaction
     @Environment(\.dismiss) private var dismiss
 
     @State private var showResumePrompt: Bool = false
@@ -27,6 +29,7 @@ public struct PlayerView: View {
     @State private var isScrubbing: Bool = false
     @State private var scrubPosition: Double = 0
     @State private var autoHideTask: Task<Void, Never>?
+    @State private var temporaryBoostBaseRate: Float?
 
     public init(
         request: PlaybackRequest,
@@ -52,6 +55,9 @@ public struct PlayerView: View {
                 .onTapGesture {
                     toggleControlsVisibility()
                 }
+
+            interaction.overlay(actions: interactionActions)
+                .ignoresSafeArea()
 
             if PlaybackSettings.enableDanmaku {
                 PlayerDanmakuOverlay(
@@ -152,7 +158,15 @@ public struct PlayerView: View {
         .toolbar(isImmersive ? .hidden : .automatic, for: .automatic)
         .toolbarBackground(.hidden, for: .automatic)
         .task {
-            isImmersive = true
+            pictureInPictureController.setLifecycle(
+                didStart: {
+                    pictureInPicture.didStartPictureInPicture()
+                },
+                restoreUserInterface: { completion in
+                    presentation.requestLandscapePlayback()
+                    pictureInPicture.restoreUserInterface(completion: completion)
+                }
+            )
             prepareSourceSwitcherModel(for: activeRequest)
             await danmakuController.prepare(for: activeRequest)
             chrome.setSidebarHidden(true)
@@ -208,6 +222,8 @@ public struct PlayerView: View {
         }
         .onDisappear {
             autoHideTask?.cancel()
+            guard !pictureInPictureController.isActive else { return }
+            pictureInPictureController.setLifecycle()
             chrome.setSidebarHidden(false)
             presentation.restoreDefaultPlaybackPresentation()
             Task { await coordinator.stop() }
@@ -379,12 +395,14 @@ public struct PlayerView: View {
                     }
                 }
                 speedMenuButton
-                iconControlButton(
-                    systemImage: isImmersive
-                        ? "arrow.down.right.and.arrow.up.left"
-                        : "arrow.up.left.and.arrow.down.right"
-                ) {
-                    toggleImmersive()
+                if interaction.showsFullscreenToggle {
+                    iconControlButton(
+                        systemImage: isImmersive
+                            ? "arrow.down.right.and.arrow.up.left"
+                            : "arrow.up.left.and.arrow.down.right"
+                    ) {
+                        toggleImmersive()
+                    }
                 }
             }
         }
@@ -439,10 +457,12 @@ public struct PlayerView: View {
                 }
             }
             speedMenuButton
-            iconControlButton(
-                systemImage: isImmersive ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right"
-            ) {
-                toggleImmersive()
+            if interaction.showsFullscreenToggle {
+                iconControlButton(
+                    systemImage: isImmersive ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right"
+                ) {
+                    toggleImmersive()
+                }
             }
         }
     }
@@ -529,6 +549,31 @@ public struct PlayerView: View {
         isScrubbing ? scrubPosition : coordinator.backend.currentTime
     }
 
+    private var interactionActions: PlayerInteractionActions {
+        PlayerInteractionActions(
+            toggleControls: {
+                toggleControlsVisibility()
+            },
+            togglePlayPause: {
+                if coordinator.phase == .playing {
+                    coordinator.pause()
+                } else {
+                    coordinator.resume()
+                }
+                revealControlsTemporarily()
+            },
+            seekRelative: { delta in
+                seekRelative(delta)
+            },
+            beginTemporaryBoost: {
+                beginTemporaryBoost()
+            },
+            endTemporaryBoost: {
+                endTemporaryBoost()
+            }
+        )
+    }
+
     private func handleScrubbingChanged(_ editing: Bool) {
         isScrubbing = editing
         if editing {
@@ -544,6 +589,20 @@ public struct PlayerView: View {
     private func seekRelative(_ delta: TimeInterval) {
         let target = min(max(coordinator.backend.currentTime + delta, 0), coordinator.backend.duration)
         Task { await coordinator.seek(to: target) }
+        revealControlsTemporarily()
+    }
+
+    private func beginTemporaryBoost() {
+        guard temporaryBoostBaseRate == nil, coordinator.phase == .playing else { return }
+        temporaryBoostBaseRate = max(coordinator.backend.rate, 1.0)
+        coordinator.setRate(3.0)
+        revealControlsTemporarily()
+    }
+
+    private func endTemporaryBoost() {
+        guard let baseRate = temporaryBoostBaseRate else { return }
+        temporaryBoostBaseRate = nil
+        coordinator.setRate(baseRate)
         revealControlsTemporarily()
     }
 
@@ -738,6 +797,73 @@ public struct PlayerSystemPlaybackController: @unchecked Sendable {
     }
 }
 
+public struct PlayerPictureInPictureLifecycleController: Sendable {
+    private let didStartImpl: @MainActor @Sendable () -> Void
+    private let restoreImpl: @MainActor @Sendable (@escaping (Bool) -> Void) -> Void
+
+    public init(
+        didStartPictureInPicture: @escaping @MainActor @Sendable () -> Void = {},
+        restoreUserInterface: @escaping @MainActor @Sendable (@escaping (Bool) -> Void) -> Void = { completion in
+            completion(true)
+        }
+    ) {
+        self.didStartImpl = didStartPictureInPicture
+        self.restoreImpl = restoreUserInterface
+    }
+
+    @MainActor
+    public func didStartPictureInPicture() {
+        didStartImpl()
+    }
+
+    @MainActor
+    public func restoreUserInterface(completion: @escaping (Bool) -> Void) {
+        restoreImpl(completion)
+    }
+}
+
+public struct PlayerInteractionActions: Sendable {
+    public let toggleControls: @MainActor @Sendable () -> Void
+    public let togglePlayPause: @MainActor @Sendable () -> Void
+    public let seekRelative: @MainActor @Sendable (TimeInterval) -> Void
+    public let beginTemporaryBoost: @MainActor @Sendable () -> Void
+    public let endTemporaryBoost: @MainActor @Sendable () -> Void
+
+    public init(
+        toggleControls: @escaping @MainActor @Sendable () -> Void = {},
+        togglePlayPause: @escaping @MainActor @Sendable () -> Void = {},
+        seekRelative: @escaping @MainActor @Sendable (TimeInterval) -> Void = { _ in },
+        beginTemporaryBoost: @escaping @MainActor @Sendable () -> Void = {},
+        endTemporaryBoost: @escaping @MainActor @Sendable () -> Void = {}
+    ) {
+        self.toggleControls = toggleControls
+        self.togglePlayPause = togglePlayPause
+        self.seekRelative = seekRelative
+        self.beginTemporaryBoost = beginTemporaryBoost
+        self.endTemporaryBoost = endTemporaryBoost
+    }
+}
+
+public struct PlayerInteractionController: @unchecked Sendable {
+    public let showsFullscreenToggle: Bool
+    private let makeOverlayImpl: @MainActor (PlayerInteractionActions) -> AnyView
+
+    public init(
+        showsFullscreenToggle: Bool = true,
+        makeOverlay: @escaping @MainActor (PlayerInteractionActions) -> AnyView = { _ in
+            AnyView(EmptyView())
+        }
+    ) {
+        self.showsFullscreenToggle = showsFullscreenToggle
+        self.makeOverlayImpl = makeOverlay
+    }
+
+    @MainActor
+    public func overlay(actions: PlayerInteractionActions) -> AnyView {
+        makeOverlayImpl(actions)
+    }
+}
+
 private struct PlayerChromeControllerKey: EnvironmentKey {
     static let defaultValue = PlayerChromeController()
 }
@@ -748,6 +874,14 @@ private struct PlayerPresentationControllerKey: EnvironmentKey {
 
 private struct PlayerSystemPlaybackControllerKey: EnvironmentKey {
     static let defaultValue = PlayerSystemPlaybackController()
+}
+
+private struct PlayerPictureInPictureLifecycleControllerKey: EnvironmentKey {
+    static let defaultValue = PlayerPictureInPictureLifecycleController()
+}
+
+private struct PlayerInteractionControllerKey: EnvironmentKey {
+    static let defaultValue = PlayerInteractionController()
 }
 
 extension EnvironmentValues {
@@ -764,5 +898,15 @@ extension EnvironmentValues {
     public var playerSystemPlaybackController: PlayerSystemPlaybackController {
         get { self[PlayerSystemPlaybackControllerKey.self] }
         set { self[PlayerSystemPlaybackControllerKey.self] = newValue }
+    }
+
+    public var playerPictureInPictureController: PlayerPictureInPictureLifecycleController {
+        get { self[PlayerPictureInPictureLifecycleControllerKey.self] }
+        set { self[PlayerPictureInPictureLifecycleControllerKey.self] = newValue }
+    }
+
+    public var playerInteractionController: PlayerInteractionController {
+        get { self[PlayerInteractionControllerKey.self] }
+        set { self[PlayerInteractionControllerKey.self] = newValue }
     }
 }

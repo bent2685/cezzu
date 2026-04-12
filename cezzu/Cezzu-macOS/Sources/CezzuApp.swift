@@ -21,6 +21,11 @@ struct CezzuApp: App {
                         }
                     }
                 ))
+                .environment(\.playerInteractionController, PlayerInteractionController(
+                    makeOverlay: { actions in
+                        AnyView(PlayerKeyboardInteractionOverlay(actions: actions))
+                    }
+                ))
         }
         .defaultSize(width: 1200, height: 800)
         .windowResizability(.contentMinSize)
