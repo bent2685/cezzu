@@ -532,16 +532,15 @@ public struct DetailView: View {
 
     @ViewBuilder
     private func heroBackdrop(viewportSize: CGSize) -> some View {
+        let backdropHeight = max(viewportSize.height + 220, 980)
         ZStack(alignment: .top) {
             model.backdropColor.opacity(0.28)
                 .ignoresSafeArea()
             backgroundCover
                 .frame(
-                    width: viewportSize.width + 560,
-                    height: max(viewportSize.height + 220, 980)
+                    width: viewportSize.width,
+                    height: backdropHeight
                 )
-                .padding(.leading, -420)
-                .padding(.trailing, -120)
                 .ignoresSafeArea()
             LinearGradient(
                 colors: [
@@ -554,11 +553,9 @@ public struct DetailView: View {
                 endPoint: .bottom
             )
             .frame(
-                width: viewportSize.width + 560,
-                height: max(viewportSize.height + 220, 980)
+                width: viewportSize.width,
+                height: backdropHeight
             )
-            .padding(.leading, -420)
-            .padding(.trailing, -120)
             .ignoresSafeArea()
         }
         .allowsHitTesting(false)
