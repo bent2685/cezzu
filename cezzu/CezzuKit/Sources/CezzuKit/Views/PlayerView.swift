@@ -5,12 +5,15 @@ import SwiftUI
 /// 播放屏：`AVPlayerLayer` 内嵌 + 自定义悬浮控制层 + 沉浸模式。
 public struct PlayerView: View {
     @State private var coordinator: PlaybackCoordinator
+    @State private var activeRequest: PlaybackRequest
+    @State private var pictureInPictureController = PlayerPictureInPictureController()
     public let request: PlaybackRequest
     public let history: HistoryStore?
     private let onClose: (() -> Void)?
 
     @Environment(\.playerChromeController) private var chrome
     @Environment(\.playerPresentationController) private var presentation
+    @Environment(\.playerSystemPlaybackController) private var systemPlayback
     @Environment(\.dismiss) private var dismiss
 
     @State private var showResumePrompt: Bool = false
@@ -30,11 +33,15 @@ public struct PlayerView: View {
         self.history = history
         self.onClose = onClose
         self._coordinator = State(initialValue: coordinator)
+        self._activeRequest = State(initialValue: request)
     }
 
     public var body: some View {
         ZStack(alignment: .bottom) {
-            PlayerSurface(player: coordinator.backend.player)
+            PlayerSurface(
+                player: coordinator.backend.player,
+                pictureInPictureController: pictureInPictureController
+            )
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
                 .onTapGesture {
@@ -57,10 +64,10 @@ public struct PlayerView: View {
                             close()
                         }
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(request.anime.title)
+                            Text(activeRequest.anime.title)
                                 .font(.subheadline.weight(.semibold))
                                 .lineLimit(1)
-                            Text(request.episode.title)
+                            Text(activeRequest.episode.title)
                                 .font(.caption)
                                 .foregroundStyle(.white.opacity(0.82))
                                 .lineLimit(1)
@@ -108,7 +115,7 @@ public struct PlayerView: View {
         }
         .animation(.easeInOut(duration: 0.2), value: isLoadingVisible)
         .animation(.easeInOut(duration: 0.2), value: controlsVisible)
-        .navigationTitle(isImmersive ? "" : request.episode.title)
+        .navigationTitle(isImmersive ? "" : activeRequest.episode.title)
         .toolbar(isImmersive ? .hidden : .automatic, for: .automatic)
         .toolbarBackground(.hidden, for: .automatic)
         .task {
@@ -116,26 +123,26 @@ public struct PlayerView: View {
             chrome.setSidebarHidden(true)
             presentation.requestLandscapePlayback()
             if let history,
-                let entry = try? history.entry(forDetailURL: request.anime.detailURL),
+                let entry = try? history.entry(forDetailURL: activeRequest.anime.detailURL),
                 entry.lastPositionMs > 0
             {
                 coordinator.ingestResumeHint(entry)
                 showResumePrompt = true
             } else {
-                await coordinator.startPlayback(request, resume: false)
+                await coordinator.startPlayback(activeRequest, resume: false)
                 revealControlsTemporarily()
             }
         }
         .alert("继续观看？", isPresented: $showResumePrompt) {
             Button("从头开始") {
                 Task {
-                    await coordinator.startPlayback(request, resume: false)
+                    await coordinator.startPlayback(activeRequest, resume: false)
                     revealControlsTemporarily()
                 }
             }
             Button("继续观看") {
                 Task {
-                    await coordinator.startPlayback(request, resume: true)
+                    await coordinator.startPlayback(activeRequest, resume: true)
                     revealControlsTemporarily()
                 }
             }
@@ -262,6 +269,12 @@ public struct PlayerView: View {
     private var wideControlsRow: some View {
         HStack {
             HStack(spacing: 22) {
+                iconControlButton(
+                    systemImage: "backward.end.fill",
+                    isEnabled: activeRequest.hasPreviousEpisode
+                ) {
+                    playNeighborEpisode(step: -1)
+                }
                 iconControlButton(systemImage: "gobackward.10") {
                     seekRelative(-10)
                 }
@@ -280,11 +293,24 @@ public struct PlayerView: View {
                 iconControlButton(systemImage: "goforward.10") {
                     seekRelative(10)
                 }
+                iconControlButton(
+                    systemImage: "forward.end.fill",
+                    isEnabled: activeRequest.hasNextEpisode
+                ) {
+                    playNeighborEpisode(step: 1)
+                }
             }
 
             Spacer(minLength: 24)
 
             HStack(spacing: 18) {
+                systemPlayback.routePickerButton()
+                if pictureInPictureController.isSupported {
+                    iconControlButton(systemImage: "pip.enter") {
+                        pictureInPictureController.start()
+                        revealControlsTemporarily()
+                    }
+                }
                 speedMenuButton
                 iconControlButton(
                     systemImage: isImmersive
@@ -300,6 +326,14 @@ public struct PlayerView: View {
     @ViewBuilder
     private var compactControlsRow: some View {
         HStack(spacing: 18) {
+            iconControlButton(
+                systemImage: "backward.end.fill",
+                size: 40,
+                font: .title3,
+                isEnabled: activeRequest.hasPreviousEpisode
+            ) {
+                playNeighborEpisode(step: -1)
+            }
             iconControlButton(systemImage: "gobackward.10") {
                 seekRelative(-10)
             }
@@ -317,6 +351,25 @@ public struct PlayerView: View {
             }
             iconControlButton(systemImage: "goforward.10") {
                 seekRelative(10)
+            }
+            iconControlButton(
+                systemImage: "forward.end.fill",
+                size: 40,
+                font: .title3,
+                isEnabled: activeRequest.hasNextEpisode
+            ) {
+                playNeighborEpisode(step: 1)
+            }
+            systemPlayback.routePickerButton()
+            if pictureInPictureController.isSupported {
+                iconControlButton(
+                    systemImage: "pip.enter",
+                    size: 40,
+                    font: .title3
+                ) {
+                    pictureInPictureController.start()
+                    revealControlsTemporarily()
+                }
             }
             speedMenuButton
             iconControlButton(
@@ -347,12 +400,15 @@ public struct PlayerView: View {
         systemImage: String,
         size: CGFloat = 44,
         font: Font = .headline,
+        isEnabled: Bool = true,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             iconControlButtonLabel(systemImage: systemImage, size: size, font: font)
         }
         .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.35)
         .contentShape(Rectangle())
     }
 
@@ -422,6 +478,26 @@ public struct PlayerView: View {
         let target = min(max(coordinator.backend.currentTime + delta, 0), coordinator.backend.duration)
         Task { await coordinator.seek(to: target) }
         revealControlsTemporarily()
+    }
+
+    private func playNeighborEpisode(step: Int) {
+        let nextRequest: PlaybackRequest?
+        switch step {
+        case -1:
+            nextRequest = activeRequest.previousEpisodeRequest
+        case 1:
+            nextRequest = activeRequest.nextEpisodeRequest
+        default:
+            nextRequest = nil
+        }
+        guard let nextRequest else { return }
+
+        showResumePrompt = false
+        activeRequest = nextRequest
+        Task {
+            await coordinator.startPlayback(nextRequest, resume: false)
+            revealControlsTemporarily()
+        }
     }
 
     private func revealControlsTemporarily() {
@@ -538,12 +614,31 @@ public struct PlayerPresentationController: Sendable {
     }
 }
 
+public struct PlayerSystemPlaybackController: @unchecked Sendable {
+    private let makeRoutePickerButtonImpl: @MainActor () -> AnyView
+
+    public init(
+        makeRoutePickerButton: @escaping @MainActor () -> AnyView = { AnyView(EmptyView()) }
+    ) {
+        self.makeRoutePickerButtonImpl = makeRoutePickerButton
+    }
+
+    @MainActor
+    public func routePickerButton() -> AnyView {
+        makeRoutePickerButtonImpl()
+    }
+}
+
 private struct PlayerChromeControllerKey: EnvironmentKey {
     static let defaultValue = PlayerChromeController()
 }
 
 private struct PlayerPresentationControllerKey: EnvironmentKey {
     static let defaultValue = PlayerPresentationController()
+}
+
+private struct PlayerSystemPlaybackControllerKey: EnvironmentKey {
+    static let defaultValue = PlayerSystemPlaybackController()
 }
 
 extension EnvironmentValues {
@@ -555,5 +650,10 @@ extension EnvironmentValues {
     public var playerPresentationController: PlayerPresentationController {
         get { self[PlayerPresentationControllerKey.self] }
         set { self[PlayerPresentationControllerKey.self] = newValue }
+    }
+
+    public var playerSystemPlaybackController: PlayerSystemPlaybackController {
+        get { self[PlayerSystemPlaybackControllerKey.self] }
+        set { self[PlayerSystemPlaybackControllerKey.self] = newValue }
     }
 }

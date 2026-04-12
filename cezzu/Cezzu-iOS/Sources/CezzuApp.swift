@@ -1,4 +1,5 @@
 import CezzuKit
+import AVKit
 import SwiftUI
 import UIKit
 
@@ -21,6 +22,14 @@ struct CezzuApp: App {
                             .first
                         else { return }
                         scene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait))
+                    }
+                ))
+                .environment(\.playerSystemPlaybackController, PlayerSystemPlaybackController(
+                    makeRoutePickerButton: {
+                        AnyView(
+                            PlayerRoutePickerButton()
+                                .frame(width: 44, height: 44)
+                        )
                     }
                 ))
         }

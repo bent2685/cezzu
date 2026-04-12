@@ -42,6 +42,10 @@ public final class PlaybackCoordinator {
     }
 
     public func startPlayback(_ request: PlaybackRequest, resume: Bool) async {
+        flushProgress()
+        backend.unload()
+        await proxy.stop()
+
         currentRequest = request
         phase = .extracting
         requiresProxyWarning = false

@@ -1,4 +1,6 @@
 import AVFoundation
+import AVKit
+import Observation
 import SwiftUI
 
 #if canImport(UIKit)
@@ -20,17 +22,47 @@ import SwiftUI
 public struct PlayerSurface: View {
     public let player: AVPlayer
     public let gravity: AVLayerVideoGravity
+    public let pictureInPictureController: PlayerPictureInPictureController?
 
     public init(
         player: AVPlayer,
-        gravity: AVLayerVideoGravity = .resizeAspect
+        gravity: AVLayerVideoGravity = .resizeAspect,
+        pictureInPictureController: PlayerPictureInPictureController? = nil
     ) {
         self.player = player
         self.gravity = gravity
+        self.pictureInPictureController = pictureInPictureController
     }
 
     public var body: some View {
-        PlayerLayerBridge(player: player, gravity: gravity)
+        PlayerLayerBridge(
+            player: player,
+            gravity: gravity,
+            pictureInPictureController: pictureInPictureController
+        )
+    }
+}
+
+@MainActor
+@Observable
+public final class PlayerPictureInPictureController {
+    public private(set) var isSupported: Bool = false
+
+    private var startImpl: @MainActor () -> Void = {}
+
+    public init() {}
+
+    public func start() {
+        guard isSupported else { return }
+        startImpl()
+    }
+
+    fileprivate func configure(
+        isSupported: Bool,
+        start: @escaping @MainActor () -> Void = {}
+    ) {
+        self.isSupported = isSupported
+        self.startImpl = start
     }
 }
 
@@ -50,12 +82,21 @@ public struct PlayerSurface: View {
     struct PlayerLayerBridge: UIViewRepresentable {
         let player: AVPlayer
         let gravity: AVLayerVideoGravity
+        let pictureInPictureController: PlayerPictureInPictureController?
+
+        func makeCoordinator() -> Coordinator {
+            Coordinator()
+        }
 
         func makeUIView(context: Context) -> PlayerLayerHostView {
             let view = PlayerLayerHostView()
             view.backgroundColor = .black
             view.playerLayer.player = player
             view.playerLayer.videoGravity = gravity
+            context.coordinator.attachPictureInPicture(
+                to: view.playerLayer,
+                bridge: pictureInPictureController
+            )
             return view
         }
 
@@ -65,6 +106,45 @@ public struct PlayerSurface: View {
             }
             if view.playerLayer.videoGravity != gravity {
                 view.playerLayer.videoGravity = gravity
+            }
+            context.coordinator.attachPictureInPicture(
+                to: view.playerLayer,
+                bridge: pictureInPictureController
+            )
+        }
+
+        @MainActor
+        final class Coordinator: NSObject, AVPictureInPictureControllerDelegate {
+            private var controller: AVPictureInPictureController?
+
+            func attachPictureInPicture(
+                to layer: AVPlayerLayer,
+                bridge: PlayerPictureInPictureController?
+            ) {
+                guard let bridge else {
+                    controller = nil
+                    return
+                }
+
+                guard AVPictureInPictureController.isPictureInPictureSupported() else {
+                    controller = nil
+                    bridge.configure(isSupported: false)
+                    return
+                }
+
+                if controller?.playerLayer !== layer {
+                    guard let next = AVPictureInPictureController(playerLayer: layer) else {
+                        controller = nil
+                        bridge.configure(isSupported: false)
+                        return
+                    }
+                    next.delegate = self
+                    controller = next
+                }
+
+                bridge.configure(isSupported: controller != nil) { [weak self] in
+                    self?.controller?.startPictureInPicture()
+                }
             }
         }
     }
@@ -96,11 +176,13 @@ public struct PlayerSurface: View {
     struct PlayerLayerBridge: NSViewRepresentable {
         let player: AVPlayer
         let gravity: AVLayerVideoGravity
+        let pictureInPictureController: PlayerPictureInPictureController?
 
         func makeNSView(context: Context) -> PlayerLayerHostView {
             let view = PlayerLayerHostView()
             view.playerLayer.player = player
             view.playerLayer.videoGravity = gravity
+            pictureInPictureController?.configure(isSupported: false)
             return view
         }
 
@@ -111,6 +193,7 @@ public struct PlayerSurface: View {
             if view.playerLayer.videoGravity != gravity {
                 view.playerLayer.videoGravity = gravity
             }
+            pictureInPictureController?.configure(isSupported: false)
         }
     }
 
