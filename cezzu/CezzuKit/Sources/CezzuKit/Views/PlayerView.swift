@@ -7,10 +7,12 @@ public struct PlayerView: View {
     @State private var coordinator: PlaybackCoordinator
     @State private var activeRequest: PlaybackRequest
     @State private var pictureInPictureController = PlayerPictureInPictureController()
+    @State private var sourceSwitcherModel: PlayerSourceSwitcherModel?
     public let request: PlaybackRequest
     public let history: HistoryStore?
     private let onClose: (() -> Void)?
 
+    @Environment(RuleStoreCoordinator.self) private var ruleStore
     @Environment(\.playerChromeController) private var chrome
     @Environment(\.playerPresentationController) private var presentation
     @Environment(\.playerSystemPlaybackController) private var systemPlayback
@@ -19,6 +21,7 @@ public struct PlayerView: View {
     @State private var showResumePrompt: Bool = false
     @State private var isImmersive: Bool = false
     @State private var controlsVisible: Bool = true
+    @State private var isSourcePanelPresented: Bool = false
     @State private var isScrubbing: Bool = false
     @State private var scrubPosition: Double = 0
     @State private var autoHideTask: Task<Void, Never>?
@@ -74,6 +77,13 @@ public struct PlayerView: View {
                         }
                         .foregroundStyle(.white)
                         Spacer()
+                        legacyCircularControlButton(
+                            systemImage: "rectangle.stack.badge.play",
+                            size: 42,
+                            font: .subheadline
+                        ) {
+                            toggleSourcePanel()
+                        }
                     }
                     .padding(.horizontal, 20)
                     .padding(.top, 18)
@@ -112,14 +122,20 @@ public struct PlayerView: View {
                 }
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
+
+            if isSourcePanelPresented, let sourceSwitcherModel {
+                sourceSwitcherOverlay(model: sourceSwitcherModel)
+            }
         }
         .animation(.easeInOut(duration: 0.2), value: isLoadingVisible)
         .animation(.easeInOut(duration: 0.2), value: controlsVisible)
+        .animation(.spring(response: 0.3, dampingFraction: 0.9), value: isSourcePanelPresented)
         .navigationTitle(isImmersive ? "" : activeRequest.episode.title)
         .toolbar(isImmersive ? .hidden : .automatic, for: .automatic)
         .toolbarBackground(.hidden, for: .automatic)
         .task {
             isImmersive = true
+            prepareSourceSwitcherModel(for: activeRequest)
             chrome.setSidebarHidden(true)
             presentation.requestLandscapePlayback()
             if let history,
@@ -164,6 +180,9 @@ public struct PlayerView: View {
             if !isScrubbing {
                 scrubPosition = newTime
             }
+        }
+        .onChange(of: activeRequest) { _, newRequest in
+            prepareSourceSwitcherModel(for: newRequest)
         }
         .onDisappear {
             autoHideTask?.cancel()
@@ -263,6 +282,29 @@ public struct PlayerView: View {
         .frame(height: 168)
         .ignoresSafeArea(edges: .bottom)
         .allowsHitTesting(false)
+    }
+
+    @ViewBuilder
+    private func sourceSwitcherOverlay(model: PlayerSourceSwitcherModel) -> some View {
+        ZStack(alignment: .trailing) {
+            Color.black.opacity(0.28)
+                .ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    closeSourcePanel()
+                }
+
+            PlayerSourceSwitcherPanel(
+                model: model,
+                activeRequest: activeRequest,
+                onClose: closeSourcePanel
+            ) { request in
+                closeSourcePanel()
+                play(request: request)
+            }
+            .transition(.move(edge: .trailing).combined(with: .opacity))
+        }
+        .zIndex(10)
     }
 
     @ViewBuilder
@@ -492,12 +534,7 @@ public struct PlayerView: View {
         }
         guard let nextRequest else { return }
 
-        showResumePrompt = false
-        activeRequest = nextRequest
-        Task {
-            await coordinator.startPlayback(nextRequest, resume: false)
-            revealControlsTemporarily()
-        }
+        play(request: nextRequest)
     }
 
     private func revealControlsTemporarily() {
@@ -543,6 +580,47 @@ public struct PlayerView: View {
             onClose()
         } else {
             dismiss()
+        }
+    }
+
+    private func prepareSourceSwitcherModel(for request: PlaybackRequest) {
+        let enabledRules = ruleStore.enabledRules()
+        if let sourceSwitcherModel {
+            sourceSwitcherModel.syncCurrentRequest(request, rules: enabledRules)
+        } else {
+            sourceSwitcherModel = PlayerSourceSwitcherModel(
+                currentRequest: request,
+                rules: enabledRules
+            )
+        }
+    }
+
+    private func toggleSourcePanel() {
+        if isSourcePanelPresented {
+            closeSourcePanel()
+            return
+        }
+        prepareSourceSwitcherModel(for: activeRequest)
+        autoHideTask?.cancel()
+        controlsVisible = true
+        withAnimation(.easeInOut(duration: 0.2)) {
+            isSourcePanelPresented = true
+        }
+    }
+
+    private func closeSourcePanel() {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            isSourcePanelPresented = false
+        }
+        revealControlsTemporarily()
+    }
+
+    private func play(request: PlaybackRequest) {
+        showResumePrompt = false
+        activeRequest = request
+        Task {
+            await coordinator.startPlayback(request, resume: false)
+            revealControlsTemporarily()
         }
     }
 
