@@ -109,9 +109,12 @@ struct CezzuRootContent: View {
 
 struct CompactRootView: View {
     let session: CezzuSession
+    @Environment(\.playerPresentationController) private var presentation
     @State private var path = NavigationPath()
     @State private var searchModel: SearchViewModel
     @State private var homeModel: HomeViewModel
+    @State private var activePlayerRequest: PlaybackRequest?
+    @State private var playerTransitionVisible: Bool = false
 
     init(session: CezzuSession) {
         self.session = session
@@ -124,43 +127,71 @@ struct CompactRootView: View {
     }
 
     var body: some View {
-        TabView {
-            NavigationStack(path: $path) {
-                HomeView(
-                    model: homeModel,
-                    onTapItem: { item in
-                        path.append(Route.detail(item))
-                    },
-                    onTapSearch: {
-                        path.append(Route.search)
+        ZStack {
+            TabView {
+                NavigationStack(path: $path) {
+                    HomeView(
+                        model: homeModel,
+                        onTapItem: { item in
+                            path.append(Route.detail(item))
+                        },
+                        onTapSearch: {
+                            path.append(Route.search)
+                        }
+                    )
+                    .navigationDestination(for: Route.self) { route in
+                        routeView(route)
                     }
-                )
-                .navigationDestination(for: Route.self) { route in
-                    routeView(route)
                 }
-            }
-            .tabItem { Label("主页", systemImage: "house") }
+                .tabItem { Label("主页", systemImage: "house") }
 
-            NavigationStack(path: $path) {
-                HistoryView(history: session.history) { entry in
-                    path.append(Route.historyDetail(historyHint(from: entry)))
+                NavigationStack(path: $path) {
+                    HistoryView(history: session.history) { entry in
+                        path.append(Route.historyDetail(historyHint(from: entry)))
+                    }
+                    .navigationDestination(for: Route.self) { route in
+                        routeView(route)
+                    }
                 }
-                .navigationDestination(for: Route.self) { route in
-                    routeView(route)
+                .tabItem { Label("最近观看", systemImage: "clock") }
+
+                NavigationStack {
+                    RuleManagerView(store: session.store)
                 }
-            }
-            .tabItem { Label("最近观看", systemImage: "clock") }
+                .tabItem { Label("规则", systemImage: "list.bullet.rectangle") }
 
-            NavigationStack {
-                RuleManagerView(store: session.store)
+                NavigationStack {
+                    SettingsView()
+                }
+                .tabItem { Label("设置", systemImage: "gearshape") }
             }
-            .tabItem { Label("规则", systemImage: "list.bullet.rectangle") }
+            .scaleEffect(playerTransitionVisible ? 0.985 : 1)
+            .opacity(playerTransitionVisible ? 0.92 : 1)
+            .blur(radius: playerTransitionVisible ? 4 : 0)
+            .disabled(activePlayerRequest != nil)
+            .animation(.easeInOut(duration: 0.22), value: playerTransitionVisible)
 
-            NavigationStack {
-                SettingsView()
+            if let activePlayerRequest {
+                ZStack {
+                    Color.black
+                        .ignoresSafeArea()
+                        .opacity(playerTransitionVisible ? 1 : 0)
+
+                    PlayerView(
+                        request: activePlayerRequest,
+                        coordinator: PlaybackCoordinator(history: session.history),
+                        history: session.history,
+                        onClose: dismissPlayer
+                    )
+                    .opacity(playerTransitionVisible ? 1 : 0)
+                    .scaleEffect(playerTransitionVisible ? 1 : 1.03)
+                }
+                .ignoresSafeArea()
+                .transition(.identity)
+                .zIndex(10)
             }
-            .tabItem { Label("设置", systemImage: "gearshape") }
         }
+        .animation(.spring(response: 0.34, dampingFraction: 0.92), value: activePlayerRequest != nil)
     }
 
     @ViewBuilder
@@ -184,7 +215,7 @@ struct CompactRootView: View {
                     api: session.bangumiAPI
                 )
             ) { request in
-                path.append(Route.player(request))
+                presentPlayer(request)
             } onTapTag: { tag in
                 searchModel.applyTag(tag)
                 Task { await searchModel.submit() }
@@ -199,7 +230,7 @@ struct CompactRootView: View {
                     historyHint: hint
                 )
             ) { request in
-                path.append(Route.player(request))
+                presentPlayer(request)
             } onTapTag: { tag in
                 searchModel.applyTag(tag)
                 Task { await searchModel.submit() }
@@ -208,18 +239,18 @@ struct CompactRootView: View {
         case .episodes(let detail):
             if let rule = session.store.installedRules.first(where: { $0.name == detail.ruleName })?.rule {
                 EpisodeListView(detail: detail, rule: rule) { req in
-                    path.append(Route.player(req))
+                    presentPlayer(req)
                 }
             }
         case .player(let req):
-            PlayerView(
-                request: req,
-                coordinator: PlaybackCoordinator(history: session.history),
-                history: session.history
-            )
-            #if os(iOS)
-                .toolbar(.hidden, for: .tabBar)
-            #endif
+            Color.clear
+                .task {
+                    guard activePlayerRequest == nil else { return }
+                    if !path.isEmpty {
+                        path.removeLast()
+                    }
+                    presentPlayer(req)
+                }
         case .ruleManager, .ruleSources:
             RuleManagerView(store: session.store)
         case .settings:
@@ -241,6 +272,32 @@ struct CompactRootView: View {
             episodeTitle: entry.lastEpisodeTitle,
             positionMs: entry.lastPositionMs
         )
+    }
+
+    private func presentPlayer(_ request: PlaybackRequest) {
+        guard activePlayerRequest == nil else { return }
+
+        presentation.requestLandscapePlayback()
+        activePlayerRequest = request
+
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(120))
+            withAnimation(.spring(response: 0.34, dampingFraction: 0.92)) {
+                playerTransitionVisible = true
+            }
+        }
+    }
+
+    private func dismissPlayer() {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            playerTransitionVisible = false
+        }
+
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(180))
+            activePlayerRequest = nil
+            presentation.restoreDefaultPlaybackPresentation()
+        }
     }
 }
 
