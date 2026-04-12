@@ -63,3 +63,10 @@ public struct InstalledRule: Hashable, Sendable, Identifiable {
         self.isEnabled = isEnabled
     }
 }
+
+extension Sequence where Element == RuleCatalogEntry {
+    func excludingInstalled(_ installedRules: [InstalledRule]) -> [RuleCatalogEntry] {
+        let installedNames = Set(installedRules.map(\.name))
+        return filter { !installedNames.contains($0.name) }
+    }
+}

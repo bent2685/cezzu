@@ -100,6 +100,8 @@ struct BrowseCatalogView: View {
     @Bindable var store: RuleStoreCoordinator
 
     var body: some View {
+        let installableCatalog = store.catalog.excludingInstalled(store.installedRules)
+
         ScrollView {
             LazyVStack(spacing: 12) {
                 HStack {
@@ -108,10 +110,10 @@ struct BrowseCatalogView: View {
                         Task { await store.refresh() }
                     }
                 }
-                if store.catalog.isEmpty {
+                if installableCatalog.isEmpty {
                     GlassPanel { Text("空空如也，先刷新一下试试。").foregroundStyle(.secondary) }
                 }
-                ForEach(store.catalog) { entry in
+                ForEach(installableCatalog) { entry in
                     GlassListRow {
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
