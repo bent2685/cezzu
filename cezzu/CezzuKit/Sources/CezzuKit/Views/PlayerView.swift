@@ -6,6 +6,7 @@ import SwiftUI
 public struct PlayerView: View {
     @State private var coordinator: PlaybackCoordinator
     @State private var activeRequest: PlaybackRequest
+    @State private var danmakuController = PlayerDanmakuController()
     @State private var pictureInPictureController = PlayerPictureInPictureController()
     @State private var sourceSwitcherModel: PlayerSourceSwitcherModel?
     public let request: PlaybackRequest
@@ -22,6 +23,7 @@ public struct PlayerView: View {
     @State private var isImmersive: Bool = false
     @State private var controlsVisible: Bool = true
     @State private var isSourcePanelPresented: Bool = false
+    @State private var isDanmakuSettingsPresented: Bool = false
     @State private var isScrubbing: Bool = false
     @State private var scrubPosition: Double = 0
     @State private var autoHideTask: Task<Void, Never>?
@@ -51,6 +53,15 @@ public struct PlayerView: View {
                     toggleControlsVisibility()
                 }
 
+            if PlaybackSettings.enableDanmaku {
+                PlayerDanmakuOverlay(
+                    controller: danmakuController,
+                    currentTime: coordinator.backend.currentTime,
+                    playbackRate: coordinator.backend.rate
+                )
+                .ignoresSafeArea()
+            }
+
             if isLoadingVisible {
                 loadingOverlay
                     .transition(.opacity)
@@ -77,6 +88,13 @@ public struct PlayerView: View {
                         }
                         .foregroundStyle(.white)
                         Spacer()
+                        legacyCircularControlButton(
+                            systemImage: "text.bubble",
+                            size: 42,
+                            font: .subheadline
+                        ) {
+                            presentDanmakuSettings()
+                        }
                         legacyCircularControlButton(
                             systemImage: "rectangle.stack.badge.play",
                             size: 42,
@@ -136,6 +154,7 @@ public struct PlayerView: View {
         .task {
             isImmersive = true
             prepareSourceSwitcherModel(for: activeRequest)
+            await danmakuController.prepare(for: activeRequest)
             chrome.setSidebarHidden(true)
             presentation.requestLandscapePlayback()
             if let history,
@@ -183,12 +202,18 @@ public struct PlayerView: View {
         }
         .onChange(of: activeRequest) { _, newRequest in
             prepareSourceSwitcherModel(for: newRequest)
+            Task {
+                await danmakuController.prepare(for: newRequest)
+            }
         }
         .onDisappear {
             autoHideTask?.cancel()
             chrome.setSidebarHidden(false)
             presentation.restoreDefaultPlaybackPresentation()
             Task { await coordinator.stop() }
+        }
+        .sheet(isPresented: $isDanmakuSettingsPresented) {
+            PlayerDanmakuSettingsSheet()
         }
     }
 
@@ -606,6 +631,12 @@ public struct PlayerView: View {
         withAnimation(.easeInOut(duration: 0.2)) {
             isSourcePanelPresented = true
         }
+    }
+
+    private func presentDanmakuSettings() {
+        autoHideTask?.cancel()
+        controlsVisible = true
+        isDanmakuSettingsPresented = true
     }
 
     private func closeSourcePanel() {
