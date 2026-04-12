@@ -35,6 +35,10 @@ final class PlayerKeyboardInteractionView: NSView {
         window?.makeFirstResponder(self)
     }
 
+    override func mouseDown(with event: NSEvent) {
+        Task { @MainActor in actions.toggleControls() }
+    }
+
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
         case 49:
