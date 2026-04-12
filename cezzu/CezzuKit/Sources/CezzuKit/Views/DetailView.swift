@@ -558,6 +558,7 @@ public struct DetailView: View {
                     width: max(viewportSize.width * 0.72, 620),
                     height: max(viewportSize.height * 0.72, 540)
                 )
+                .mask(backgroundCoverFeather)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                 .clipped()
                 .opacity(palette.backdropOpacity)
@@ -595,6 +596,32 @@ public struct DetailView: View {
             .ignoresSafeArea()
         }
         .allowsHitTesting(false)
+    }
+
+    private var backgroundCoverFeather: some View {
+        Rectangle()
+            .mask {
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0.0),
+                        .init(color: .black, location: 0.18),
+                        .init(color: .black, location: 1.0),
+                    ],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            }
+            .mask {
+                LinearGradient(
+                    stops: [
+                        .init(color: .black, location: 0.0),
+                        .init(color: .black, location: 0.76),
+                        .init(color: .clear, location: 1.0),
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
     }
 
     @ViewBuilder
