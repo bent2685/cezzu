@@ -49,3 +49,7 @@ build/
 *.log
 tmp/
 .tmp/
+
+# ─── Release 构建 ───
+dist/
+.build-release/
