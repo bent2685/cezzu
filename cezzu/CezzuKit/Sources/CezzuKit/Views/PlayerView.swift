@@ -48,14 +48,24 @@ public struct PlayerView: View {
 
             if controlsVisible {
                 VStack {
-                    HStack {
-                        circularControlButton(
+                    HStack(spacing: 12) {
+                        legacyCircularControlButton(
                             systemImage: "chevron.backward",
                             size: 42,
                             font: .subheadline
                         ) {
                             close()
                         }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(request.anime.title)
+                                .font(.subheadline.weight(.semibold))
+                                .lineLimit(1)
+                            Text(request.episode.title)
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.82))
+                                .lineLimit(1)
+                        }
+                        .foregroundStyle(.white)
                         Spacer()
                     }
                     .padding(.horizontal, 20)
@@ -85,9 +95,13 @@ public struct PlayerView: View {
                         }
                         .padding(.horizontal)
                     }
-                    controls
-                        .padding(.horizontal)
-                        .padding(.bottom, 18)
+                    Spacer(minLength: 0)
+                    ZStack(alignment: .bottom) {
+                        bottomControlsGradient
+                        controls
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 18)
+                    }
                 }
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
@@ -196,22 +210,12 @@ public struct PlayerView: View {
 
     @ViewBuilder
     private var controls: some View {
-        GlassPanel {
-            VStack(spacing: 10) {
-                HStack(alignment: .center) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(request.episode.title)
-                            .font(.subheadline.weight(.semibold))
-                            .lineLimit(1)
-                        Text(request.anime.title)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                    Spacer()
-                    Text("\(formatTime(displayedTime)) / \(formatTime(coordinator.backend.duration))")
-                        .font(.caption.monospacedDigit())
-                }
+        VStack(spacing: 14) {
+            HStack(spacing: 12) {
+                Text(formatTime(displayedTime))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.92))
+
                 Slider(
                     value: Binding(
                         get: { displayedTime },
@@ -220,57 +224,89 @@ public struct PlayerView: View {
                     in: 0...max(coordinator.backend.duration, 1),
                     onEditingChanged: handleScrubbingChanged
                 )
+                .tint(.white)
                 .contentShape(Rectangle())
-                ViewThatFits {
-                    wideControlsRow
-                    compactControlsRow
-                }
+
+                Text(formatTime(coordinator.backend.duration))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.92))
+            }
+
+            ViewThatFits {
+                wideControlsRow
+                compactControlsRow
             }
         }
-        .frame(maxWidth: 520)
+        .frame(maxWidth: .infinity)
+        .shadow(color: .black.opacity(0.35), radius: 10, y: 2)
+    }
+
+    private var bottomControlsGradient: some View {
+        LinearGradient(
+            stops: [
+                .init(color: .black.opacity(0.72), location: 0),
+                .init(color: .black.opacity(0.38), location: 0.38),
+                .init(color: .black.opacity(0.14), location: 0.72),
+                .init(color: .clear, location: 1),
+            ],
+            startPoint: .bottom,
+            endPoint: .top
+        )
+        .frame(maxWidth: .infinity)
+        .frame(height: 168)
+        .ignoresSafeArea(edges: .bottom)
+        .allowsHitTesting(false)
     }
 
     @ViewBuilder
     private var wideControlsRow: some View {
-        HStack(spacing: 12) {
-            circularControlButton(systemImage: "gobackward.10") {
-                seekRelative(-10)
-            }
-            circularControlButton(
-                systemImage: coordinator.phase == .playing ? "pause.fill" : "play.fill",
-                size: 54,
-                font: .headline
-            ) {
-                if coordinator.phase == .playing {
-                    coordinator.pause()
-                } else {
-                    coordinator.resume()
+        HStack {
+            HStack(spacing: 22) {
+                iconControlButton(systemImage: "gobackward.10") {
+                    seekRelative(-10)
                 }
-                revealControlsTemporarily()
+                iconControlButton(
+                    systemImage: coordinator.phase == .playing ? "pause.fill" : "play.fill",
+                    size: 42,
+                    font: .title2
+                ) {
+                    if coordinator.phase == .playing {
+                        coordinator.pause()
+                    } else {
+                        coordinator.resume()
+                    }
+                    revealControlsTemporarily()
+                }
+                iconControlButton(systemImage: "goforward.10") {
+                    seekRelative(10)
+                }
             }
-            circularControlButton(systemImage: "goforward.10") {
-                seekRelative(10)
-            }
-            Spacer(minLength: 0)
-            speedMenuButton
-            circularControlButton(
-                systemImage: isImmersive ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right"
-            ) {
-                toggleImmersive()
+
+            Spacer(minLength: 24)
+
+            HStack(spacing: 18) {
+                speedMenuButton
+                iconControlButton(
+                    systemImage: isImmersive
+                        ? "arrow.down.right.and.arrow.up.left"
+                        : "arrow.up.left.and.arrow.down.right"
+                ) {
+                    toggleImmersive()
+                }
             }
         }
     }
 
     @ViewBuilder
     private var compactControlsRow: some View {
-        HStack(spacing: 10) {
-            circularControlButton(systemImage: "gobackward.10") {
+        HStack(spacing: 18) {
+            iconControlButton(systemImage: "gobackward.10") {
                 seekRelative(-10)
             }
-            circularControlButton(
+            iconControlButton(
                 systemImage: coordinator.phase == .playing ? "pause.fill" : "play.fill",
-                size: 50,
-                font: .subheadline
+                size: 40,
+                font: .title3
             ) {
                 if coordinator.phase == .playing {
                     coordinator.pause()
@@ -279,11 +315,11 @@ public struct PlayerView: View {
                 }
                 revealControlsTemporarily()
             }
-            circularControlButton(systemImage: "goforward.10") {
+            iconControlButton(systemImage: "goforward.10") {
                 seekRelative(10)
             }
             speedMenuButton
-            circularControlButton(
+            iconControlButton(
                 systemImage: isImmersive ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right"
             ) {
                 toggleImmersive()
@@ -301,27 +337,55 @@ public struct PlayerView: View {
                 }
             }
         } label: {
-            circularControlButtonLabel(systemImage: "speedometer")
+            iconControlButtonLabel(systemImage: "speedometer")
         }
         .buttonStyle(.plain)
     }
 
     @ViewBuilder
-    private func circularControlButton(
+    private func iconControlButton(
         systemImage: String,
         size: CGFloat = 44,
         font: Font = .headline,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            circularControlButtonLabel(systemImage: systemImage, size: size, font: font)
+            iconControlButtonLabel(systemImage: systemImage, size: size, font: font)
+        }
+        .buttonStyle(.plain)
+        .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private func iconControlButtonLabel(
+        systemImage: String,
+        size: CGFloat = 44,
+        font: Font = .headline
+    ) -> some View {
+        Image(systemName: systemImage)
+            .font(font.weight(.semibold))
+            .foregroundStyle(.white)
+            .frame(width: size, height: size)
+            .contentShape(Rectangle())
+            .shadow(color: .black.opacity(0.4), radius: 8, y: 1)
+    }
+
+    @ViewBuilder
+    private func legacyCircularControlButton(
+        systemImage: String,
+        size: CGFloat = 44,
+        font: Font = .headline,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            legacyCircularControlButtonLabel(systemImage: systemImage, size: size, font: font)
         }
         .buttonStyle(.plain)
         .contentShape(Circle())
     }
 
     @ViewBuilder
-    private func circularControlButtonLabel(
+    private func legacyCircularControlButtonLabel(
         systemImage: String,
         size: CGFloat = 44,
         font: Font = .headline
