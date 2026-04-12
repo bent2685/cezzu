@@ -250,11 +250,10 @@ struct SplitRootView: View {
     let session: CezzuSession
     @Environment(\.colorScheme) private var colorScheme
     @State private var sidebarItem: SidebarItem? = .home
-    @State private var path = NavigationPath()
+    @State private var path: [Route] = []
     @State private var searchModel: SearchViewModel
     @State private var homeModel: HomeViewModel
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
-    @State private var detailChromeFillActive = false
 
     enum SidebarItem: Hashable, Identifiable {
         case home, history, rules, settings
@@ -323,7 +322,7 @@ struct SplitRootView: View {
         }()
         return content
             .background {
-                if detailChromeFillActive {
+                if showsDetailChromeFill {
                     detailChromeFillColor
                         .ignoresSafeArea()
                 }
@@ -337,11 +336,6 @@ struct SplitRootView: View {
                     }
                 }
             )
-            .onChange(of: path.count) { _, count in
-                if count == 0 {
-                    detailChromeFillActive = false
-                }
-            }
     }
 
     private var sidebar: some View {
@@ -360,6 +354,15 @@ struct SplitRootView: View {
         colorScheme == .dark ? .black : .white
     }
 
+    private var showsDetailChromeFill: Bool {
+        switch path.last {
+        case .detail, .historyDetail:
+            return true
+        default:
+            return false
+        }
+    }
+
     @ViewBuilder
     private var rootContent: some View {
         switch sidebarItem ?? .home {
@@ -369,18 +372,14 @@ struct SplitRootView: View {
                 onTapItem: { item in path.append(Route.detail(item)) },
                 onTapSearch: { path.append(Route.search) }
             )
-            .onAppear { detailChromeFillActive = false }
         case .history:
             HistoryView(history: session.history) { entry in
                 path.append(Route.historyDetail(historyHint(from: entry)))
             }
-            .onAppear { detailChromeFillActive = false }
         case .rules:
             RuleManagerView(store: session.store)
-                .onAppear { detailChromeFillActive = false }
         case .settings:
             SettingsView()
-                .onAppear { detailChromeFillActive = false }
         }
     }
 
@@ -393,12 +392,10 @@ struct SplitRootView: View {
                 onTapItem: { item in path.append(Route.detail(item)) },
                 onTapSearch: { path.append(Route.search) }
             )
-            .onAppear { detailChromeFillActive = false }
         case .search:
             SearchView(model: searchModel) { item in
                 path.append(Route.detail(item))
             }
-            .onAppear { detailChromeFillActive = false }
         case .detail(let item):
             DetailView(
                 model: DetailViewModel(
@@ -413,7 +410,6 @@ struct SplitRootView: View {
                 Task { await searchModel.submit() }
                 path.append(Route.search)
             }
-            .onAppear { detailChromeFillActive = true }
         case .historyDetail(let hint):
             DetailView(
                 model: DetailViewModel(
@@ -429,13 +425,11 @@ struct SplitRootView: View {
                 Task { await searchModel.submit() }
                 path.append(Route.search)
             }
-            .onAppear { detailChromeFillActive = true }
         case .episodes(let detail):
             if let rule = session.store.installedRules.first(where: { $0.name == detail.ruleName })?.rule {
                 EpisodeListView(detail: detail, rule: rule) { req in
                     path.append(Route.player(req))
                 }
-                .onAppear { detailChromeFillActive = false }
             }
         case .player(let req):
             PlayerView(
@@ -443,10 +437,8 @@ struct SplitRootView: View {
                 coordinator: PlaybackCoordinator(history: session.history),
                 history: session.history
             )
-            .onAppear { detailChromeFillActive = false }
         default:
             EmptyView()
-                .onAppear { detailChromeFillActive = false }
         }
     }
 
