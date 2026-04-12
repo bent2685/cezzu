@@ -1291,7 +1291,8 @@ public struct DetailView: View {
     private func squareAvatar(url: URL?, title: String, size: CGFloat) -> some View {
         avatar(url: url, title: title)
             .frame(width: size, height: size)
-            .aspectRatio(1, contentMode: .fit)
+            .clipped()
+            .clipShape(RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous))
     }
 
     @ViewBuilder
