@@ -61,6 +61,7 @@ targets:
               NSIncludesSubdomains: true
     settings:
       base:
+        PRODUCT_NAME: Cezzu
         PRODUCT_BUNDLE_IDENTIFIER: com.bent2685.cezzu.iOS
         CODE_SIGN_ENTITLEMENTS: Cezzu-iOS/Cezzu_iOS.entitlements
         CODE_SIGN_STYLE: Automatic
@@ -104,6 +105,7 @@ targets:
               NSIncludesSubdomains: true
     settings:
       base:
+        PRODUCT_NAME: Cezzu
         PRODUCT_BUNDLE_IDENTIFIER: com.bent2685.cezzu.macOS
         CODE_SIGN_ENTITLEMENTS: Cezzu-macOS/Cezzu_macOS.entitlements
         CODE_SIGN_STYLE: Automatic
