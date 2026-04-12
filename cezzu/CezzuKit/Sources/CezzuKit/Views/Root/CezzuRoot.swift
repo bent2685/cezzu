@@ -114,6 +114,7 @@ struct CompactRootView: View {
     @State private var searchModel: SearchViewModel
     @State private var homeModel: HomeViewModel
     @State private var activePlayerRequest: PlaybackRequest?
+    @State private var activeSourceCache: SourceSearchCache?
     @State private var playerTransitionVisible: Bool = false
 
     init(session: CezzuSession) {
@@ -181,6 +182,7 @@ struct CompactRootView: View {
                         request: activePlayerRequest,
                         coordinator: PlaybackCoordinator(history: session.history),
                         history: session.history,
+                        sourceCache: activeSourceCache,
                         onClose: dismissPlayer
                     )
                     .opacity(playerTransitionVisible ? 1 : 0)
@@ -214,7 +216,8 @@ struct CompactRootView: View {
                     rules: session.store.enabledRules(),
                     api: session.bangumiAPI
                 )
-            ) { request in
+            ) { request, cache in
+                activeSourceCache = cache
                 presentPlayer(request)
             } onTapTag: { tag in
                 searchModel.applyTag(tag)
@@ -229,7 +232,8 @@ struct CompactRootView: View {
                     api: session.bangumiAPI,
                     historyHint: hint
                 )
-            ) { request in
+            ) { request, cache in
+                activeSourceCache = cache
                 presentPlayer(request)
             } onTapTag: { tag in
                 searchModel.applyTag(tag)
@@ -296,6 +300,7 @@ struct CompactRootView: View {
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(180))
             activePlayerRequest = nil
+            activeSourceCache = nil
             presentation.restoreDefaultPlaybackPresentation()
         }
     }
@@ -484,7 +489,7 @@ struct SplitRootView: View {
                     rules: session.store.enabledRules(),
                     api: session.bangumiAPI
                 )
-            ) { request in
+            ) { request, _ in
                 path.append(Route.player(request))
             } onTapTag: { tag in
                 searchModel.applyTag(tag)
@@ -499,7 +504,7 @@ struct SplitRootView: View {
                     api: session.bangumiAPI,
                     historyHint: hint
                 )
-            ) { request in
+            ) { request, _ in
                 path.append(Route.player(request))
             } onTapTag: { tag in
                 searchModel.applyTag(tag)

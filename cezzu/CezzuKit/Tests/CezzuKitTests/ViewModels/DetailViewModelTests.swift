@@ -37,6 +37,22 @@ struct DetailViewModelTests {
                 continuation.finish()
             }
         }
+
+        func searchAll(
+            keywords: [String],
+            rules: [CezzuRule],
+            deadline: ContinuousClock.Instant
+        ) -> AsyncStream<SearchCoordinator.Update> {
+            AsyncStream { continuation in
+                for keyword in keywords {
+                    for update in updates[keyword] ?? [] {
+                        continuation.yield(update)
+                    }
+                }
+                continuation.yield(.finished)
+                continuation.finish()
+            }
+        }
     }
 
     struct FakeRuleEngine: RuleEngine {
@@ -90,6 +106,23 @@ struct DetailViewModelTests {
         func search(
             keyword: String,
             rules: [CezzuRule]
+        ) -> AsyncStream<SearchCoordinator.Update> {
+            AsyncStream { continuation in
+                Task {
+                    continuation.yield(.ruleStarted(name: result.ruleName))
+                    continuation.yield(.ruleResults(name: result.ruleName, results: [result]))
+                    try? await Task.sleep(for: .milliseconds(25))
+                    await probe.recordSearchFinish()
+                    continuation.yield(.finished)
+                    continuation.finish()
+                }
+            }
+        }
+
+        func searchAll(
+            keywords: [String],
+            rules: [CezzuRule],
+            deadline: ContinuousClock.Instant
         ) -> AsyncStream<SearchCoordinator.Update> {
             AsyncStream { continuation in
                 Task {

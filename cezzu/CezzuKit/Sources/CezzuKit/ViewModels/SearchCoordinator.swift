@@ -7,6 +7,13 @@ public protocol SourceSearchCoordinating: Sendable {
         keyword: String,
         rules: [CezzuRule]
     ) -> AsyncStream<SearchCoordinator.Update>
+
+    /// 多关键词并发搜索。所有关键词 × 所有规则同时发起，受全局截止时间约束。
+    func searchAll(
+        keywords: [String],
+        rules: [CezzuRule],
+        deadline: ContinuousClock.Instant
+    ) -> AsyncStream<SearchCoordinator.Update>
 }
 
 public actor SearchCoordinator: SourceSearchCoordinating {
@@ -21,7 +28,7 @@ public actor SearchCoordinator: SourceSearchCoordinating {
     private let engine: RuleEngine
     private let perRuleTimeoutSeconds: TimeInterval
 
-    public init(engine: RuleEngine = LiveRuleEngine(), perRuleTimeoutSeconds: TimeInterval = 7) {
+    public init(engine: RuleEngine = LiveRuleEngine(), perRuleTimeoutSeconds: TimeInterval = 5) {
         self.engine = engine
         self.perRuleTimeoutSeconds = perRuleTimeoutSeconds
     }
@@ -42,6 +49,37 @@ public actor SearchCoordinator: SourceSearchCoordinating {
             }
             continuation.onTermination = { @Sendable _ in
                 task.cancel()
+            }
+        }
+    }
+
+    /// 多关键词并发搜索。所有 keyword × rule 组合同时发起，到达 deadline 后自动取消剩余请求。
+    public nonisolated func searchAll(
+        keywords: [String],
+        rules: [CezzuRule],
+        deadline: ContinuousClock.Instant
+    ) -> AsyncStream<Update> {
+        AsyncStream { continuation in
+            let searchTask = Task {
+                await self.runAll(
+                    keywords: keywords,
+                    rules: rules,
+                    continuation: continuation
+                )
+                continuation.finish()
+            }
+            let deadlineTask = Task {
+                let remaining = deadline - .now
+                if remaining > .zero {
+                    try? await Task.sleep(for: remaining)
+                }
+                searchTask.cancel()
+                try? await Task.sleep(for: .milliseconds(50))
+                continuation.finish()
+            }
+            continuation.onTermination = { @Sendable _ in
+                searchTask.cancel()
+                deadlineTask.cancel()
             }
         }
     }
@@ -67,6 +105,38 @@ public actor SearchCoordinator: SourceSearchCoordinating {
                         continuation.yield(.ruleResults(name: rule.name, results: results))
                     } catch {
                         continuation.yield(.ruleFailed(name: rule.name, message: "\(error)"))
+                    }
+                }
+            }
+        }
+        continuation.yield(.finished)
+    }
+
+    private func runAll(
+        keywords: [String],
+        rules: [CezzuRule],
+        continuation: AsyncStream<Update>.Continuation
+    ) async {
+        let timeout = perRuleTimeoutSeconds
+        let engine = self.engine
+        await withTaskGroup(of: Void.self) { group in
+            for keyword in keywords {
+                for rule in rules {
+                    group.addTask {
+                        continuation.yield(.ruleStarted(name: rule.name))
+                        do {
+                            let results = try await SearchCoordinator.searchOne(
+                                keyword: keyword,
+                                rule: rule,
+                                engine: engine,
+                                timeout: timeout
+                            )
+                            continuation.yield(.ruleResults(name: rule.name, results: results))
+                        } catch is CancellationError {
+                            // 截止时间到达或外部取消，静默忽略
+                        } catch {
+                            continuation.yield(.ruleFailed(name: rule.name, message: "\(error)"))
+                        }
                     }
                 }
             }

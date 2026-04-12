@@ -11,6 +11,7 @@ public struct PlayerView: View {
     @State private var sourceSwitcherModel: PlayerSourceSwitcherModel?
     public let request: PlaybackRequest
     public let history: HistoryStore?
+    public let sourceCache: SourceSearchCache?
     private let onClose: (() -> Void)?
 
     @Environment(RuleStoreCoordinator.self) private var ruleStore
@@ -35,10 +36,12 @@ public struct PlayerView: View {
         request: PlaybackRequest,
         coordinator: PlaybackCoordinator,
         history: HistoryStore?,
+        sourceCache: SourceSearchCache? = nil,
         onClose: (() -> Void)? = nil
     ) {
         self.request = request
         self.history = history
+        self.sourceCache = sourceCache
         self.onClose = onClose
         self._coordinator = State(initialValue: coordinator)
         self._activeRequest = State(initialValue: request)
@@ -674,7 +677,8 @@ public struct PlayerView: View {
         } else {
             sourceSwitcherModel = PlayerSourceSwitcherModel(
                 currentRequest: request,
-                rules: enabledRules
+                rules: enabledRules,
+                cachedSources: sourceCache
             )
         }
     }

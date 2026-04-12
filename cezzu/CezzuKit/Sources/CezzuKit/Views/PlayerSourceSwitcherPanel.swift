@@ -21,6 +21,7 @@ final class PlayerSourceSwitcherModel {
     init(
         currentRequest: PlaybackRequest,
         rules: [CezzuRule],
+        cachedSources: SourceSearchCache? = nil,
         searchCoordinator: SourceSearchCoordinating = SearchCoordinator(),
         engine: RuleEngine = LiveRuleEngine()
     ) {
@@ -28,7 +29,17 @@ final class PlayerSourceSwitcherModel {
         self.rules = rules
         self.searchCoordinator = searchCoordinator
         self.engine = engine
-        syncCurrentRequest(currentRequest, rules: rules)
+
+        if let cache = cachedSources, !cache.sources.isEmpty {
+            sources = cache.sources
+            sourceStates = cache.sourceStates
+            hasLoadedExtraSources = true
+            selectedSourceID = currentRequest.rule.name
+            selectedRoadIndex = currentRequest.roadIndex
+            sourceStates[currentRequest.rule.name] = .loaded(currentRequest.anime)
+        } else {
+            syncCurrentRequest(currentRequest, rules: rules)
+        }
     }
 
     func syncCurrentRequest(_ request: PlaybackRequest, rules: [CezzuRule]) {
@@ -74,19 +85,24 @@ final class PlayerSourceSwitcherModel {
             ruleName: currentRequest.rule.name
         )
 
-        var unmatchedRules = remainingRules
-        for keyword in searchKeywords(for: item) {
-            if unmatchedRules.isEmpty { break }
-            let stream = searchCoordinator.search(keyword: keyword, rules: unmatchedRules)
-            for await update in stream {
-                if case .ruleResults(let name, let results) = update,
-                    matchesByRule[name] == nil,
-                    let chosen = bestMatch(in: results, keyword: keyword)
-                {
+        let keywords = searchKeywords(for: item)
+        let deadline = ContinuousClock.now + .seconds(4)
+        let stream = searchCoordinator.searchAll(
+            keywords: keywords,
+            rules: remainingRules,
+            deadline: deadline
+        )
+        for await update in stream {
+            if case .ruleResults(let name, let results) = update,
+                matchesByRule[name] == nil
+            {
+                let chosen = keywords.lazy
+                    .compactMap { self.bestMatch(in: results, keyword: $0) }
+                    .first
+                if let chosen {
                     matchesByRule[name] = chosen
                 }
             }
-            unmatchedRules.removeAll { matchesByRule[$0.name] != nil }
         }
 
         sources = matchesByRule.values

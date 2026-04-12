@@ -20,6 +20,22 @@ struct PlayerSourceSwitcherModelTests {
                 continuation.finish()
             }
         }
+
+        func searchAll(
+            keywords: [String],
+            rules: [CezzuRule],
+            deadline: ContinuousClock.Instant
+        ) -> AsyncStream<SearchCoordinator.Update> {
+            AsyncStream { continuation in
+                for keyword in keywords {
+                    for update in updates[keyword] ?? [] {
+                        continuation.yield(update)
+                    }
+                }
+                continuation.yield(.finished)
+                continuation.finish()
+            }
+        }
     }
 
     struct FakeRuleEngine: RuleEngine {

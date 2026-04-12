@@ -20,6 +20,12 @@ public enum SourceEpisodesState: Hashable, Sendable {
     case failed(message: String)
 }
 
+/// 跨页面传递的播放源搜索缓存，避免播放页重复搜索。
+public struct SourceSearchCache: Sendable {
+    public let sources: [PlayableSource]
+    public let sourceStates: [PlayableSource.ID: SourceEpisodesState]
+}
+
 public enum DetailTab: String, CaseIterable, Hashable, Sendable {
     case overview
     case comments
@@ -157,6 +163,10 @@ public final class DetailViewModel {
         return sourceStates[source.id] ?? .idle
     }
 
+    public var sourceCache: SourceSearchCache {
+        SourceSearchCache(sources: sources, sourceStates: sourceStates)
+    }
+
     public var currentEpisodes: [Episode] {
         guard let detail = selectedDetail, detail.roads.indices.contains(selectedRoadIndex) else {
             return []
@@ -234,21 +244,30 @@ public final class DetailViewModel {
         isSearchingSources = true
         sourceSearchFailed = nil
 
+        // 有历史恢复提示时，与搜索并行预加载偏好源的剧集数据
+        let preferredPrefetchTask: Task<Void, Never>? = prefetchPreferredSourceIfNeeded()
+
         var matchesByRule: [String: SearchResult] = [:]
-        var remainingRules = rules
         var initialSourceTask: Task<Void, Never>?
 
-        for keyword in searchKeywords {
-            if remainingRules.isEmpty { break }
-            let stream = searchCoordinator.search(keyword: keyword, rules: remainingRules)
-            for await update in stream {
-                if case .ruleResults(let name, let results) = update,
-                    matchesByRule[name] == nil,
-                    let chosen = bestMatch(in: results, keyword: keyword)
-                {
+        let deadline = ContinuousClock.now + .seconds(4)
+        let stream = searchCoordinator.searchAll(
+            keywords: searchKeywords,
+            rules: rules,
+            deadline: deadline
+        )
+        let keywords = searchKeywords
+        for await update in stream {
+            if case .ruleResults(let name, let results) = update,
+                matchesByRule[name] == nil
+            {
+                let chosen = keywords.lazy
+                    .compactMap { self.bestMatch(in: results, keyword: $0) }
+                    .first
+                if let chosen {
                     matchesByRule[name] = chosen
                     sources = sortedSources(from: matchesByRule)
-                    if initialSourceTask == nil {
+                    if initialSourceTask == nil, preferredPrefetchTask == nil {
                         let sourceID = chosen.ruleName
                         initialSourceTask = Task { @MainActor in
                             await self.selectSource(sourceID)
@@ -256,7 +275,6 @@ public final class DetailViewModel {
                     }
                 }
             }
-            remainingRules.removeAll { matchesByRule[$0.name] != nil }
         }
 
         sources = sortedSources(from: matchesByRule)
@@ -265,6 +283,9 @@ public final class DetailViewModel {
         if let initialSourceTask {
             await initialSourceTask.value
         }
+        if let preferredPrefetchTask {
+            await preferredPrefetchTask.value
+        }
 
         if let preferred = preferredSourceID, selectedSourceID != preferred {
             await selectSource(preferred)
@@ -272,6 +293,42 @@ public final class DetailViewModel {
             await selectSource(first.id)
         } else {
             sourceSearchFailed = "没有匹配到可播放源"
+        }
+    }
+
+    /// 当有 historyHint 时，与搜索并行预加载偏好源的剧集数据，
+    /// 让搜索完成后 selectSource 直接命中缓存。
+    private func prefetchPreferredSourceIfNeeded() -> Task<Void, Never>? {
+        guard let hint = historyHint,
+            let rule = rules.first(where: { $0.name == hint.ruleName })
+        else { return nil }
+
+        let sourceID = hint.ruleName
+        let source = PlayableSource(
+            result: SearchResult(
+                title: item.displayName,
+                detailURL: hint.detailURL,
+                ruleName: hint.ruleName
+            )
+        )
+
+        sources = [source]
+        selectedSourceID = sourceID
+        sourceStates[sourceID] = .loading
+
+        return Task { @MainActor in
+            do {
+                let roads = try await self.engine.fetchEpisodes(detailURL: hint.detailURL, with: rule)
+                let detail = AnimeDetail(
+                    title: self.item.displayName,
+                    detailURL: hint.detailURL,
+                    ruleName: hint.ruleName,
+                    roads: roads
+                )
+                self.sourceStates[sourceID] = .loaded(detail)
+            } catch {
+                self.sourceStates[sourceID] = .failed(message: "\(error)")
+            }
         }
     }
 
@@ -510,12 +567,12 @@ private struct DetailPalette {
 public struct DetailView: View {
     @State private var model: DetailViewModel
     @Environment(\.colorScheme) private var colorScheme
-    var onTapPlay: (PlaybackRequest) -> Void
+    var onTapPlay: (PlaybackRequest, SourceSearchCache?) -> Void
     var onTapTag: (String) -> Void
 
     public init(
         model: DetailViewModel,
-        onTapPlay: @escaping (PlaybackRequest) -> Void,
+        onTapPlay: @escaping (PlaybackRequest, SourceSearchCache?) -> Void,
         onTapTag: @escaping (String) -> Void
     ) {
         _model = State(initialValue: model)
@@ -787,7 +844,7 @@ public struct DetailView: View {
         VStack(alignment: .leading, spacing: 14) {
             Button {
                 if let request = model.playbackRequestForResume() ?? model.playbackRequestForFirstEpisode() {
-                    onTapPlay(request)
+                    onTapPlay(request, model.sourceCache)
                 }
             } label: {
                 HStack(spacing: 10) {
@@ -1077,7 +1134,7 @@ public struct DetailView: View {
                     ForEach(Array(model.currentEpisodes.enumerated()), id: \.element.id) { index, episode in
                         Button {
                             if let request = model.playbackRequest(episodeIndex: index) {
-                                onTapPlay(request)
+                                onTapPlay(request, model.sourceCache)
                             }
                         } label: {
                             Text(episode.title)
