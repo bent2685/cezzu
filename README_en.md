@@ -24,8 +24,8 @@ Cezzu is a **monorepo** with two sibling sub-projects:
 
 ### Prerequisites
 
-- macOS 14+ with Xcode 16+ (development environment)
-- Swift 6
+- macOS 15+ with Xcode 26+ (development environment; `Package.swift` requires swift-tools-version 6.2)
+- Swift 6.2+
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen): `brew install xcodegen`
 
 ### Runtime support range
@@ -76,6 +76,17 @@ swift test --filter CezzuRuleDecodingTests    # run a single suite
 
 You only need to open Xcode when you actually have to verify UI / on-device playback / WebKit extraction.
 
+### Run macOS app without Xcode
+
+`CezzuKit`'s `Package.swift` also includes a `CezzuMac` executable target, so you can launch the macOS version directly via SwiftPM:
+
+```bash
+cd cezzu/CezzuKit
+swift run CezzuMac
+```
+
+No `.app` bundle, no sandbox — handy for quick non-UI verification. Use the Xcode workflow for production builds.
+
 ### Working on a sub-project independently
 
 Want to edit rule content only (without touching Swift code) → just edit `cezzu-rule/rules/*.json`, then run `./cezzu-rule/scripts/update_index.swift` to regenerate `index.json`. See [`cezzu-rule/README.md`](./cezzu-rule/README.md).
@@ -83,7 +94,7 @@ Want to edit rule content only (without touching Swift code) → just edit `cezz
 ## Platform & language
 
 - **iOS 17+ / macOS 14+** (minimum support line; iOS 26+ / macOS 26+ enables Liquid Glass automatically)
-- **Swift 6** with strict concurrency mode
+- **Swift 6** (swift-tools-version 6.2) with strict concurrency mode
 - The only third-party dependency: [Kanna](https://github.com/tid-kijyun/Kanna) (XPath / HTML parsing)
 
 ## Design goals
@@ -92,6 +103,18 @@ Want to edit rule content only (without touching Swift code) → just edit `cezz
 - **Progressively enhanced design language**: a single SwiftUI codebase covers iOS / macOS. iOS 26+ ships real Liquid Glass; older platforms fall back to `Material`. Business code is platform-agnostic. All glass effects flow through `CezzuKit/Views/Design/Glass*.swift`. Hand-rolled fake glass is forbidden.
 - **Zero forking in core logic**: core code lives in `CezzuKit`. `#if os(iOS)` / `#if os(macOS)` is forbidden in `CezzuKit`; platform forking is allowed only at App-target entry points. Version forking via `if #available` is allowed only inside `Views/Design/`.
 
+## Features
+
+- **Bangumi integration** — search anime, fetch metadata & staff info via the [Bangumi](https://bgm.tv) API
+- **Danmaku (bullet comments)** — fetch and render danmaku over the player; opacity, font size, and speed are configurable
+- **Picture-in-Picture & background audio** — PiP lifecycle management + background audio playback
+- **Local HLS reverse proxy** — manifest rewriting + anti-hotlink header injection for authenticated HLS streams
+- **WebView video extraction** — automatically extract video URLs via WebKit, with built-in ad-blocking rules
+- **Multi-source switching** — switch between video source lines directly in the player
+- **Watch history** — automatically saves playback progress and resumes where you left off
+- **Rule source management** — subscribe to multiple remote rule sources; pull, update, and import in one place
+- **Playback settings** — adjustable playback speed, danmaku, quality, and more
+
 ## Acknowledgements
 
 The initial content under `cezzu-rule/rules/` was forked from [`Predidit/KazumiRules`](https://github.com/Predidit/KazumiRules) (MIT License). The overall idea of Cezzu was also heavily inspired by [Kazumi](https://github.com/Predidit/Kazumi). Thanks to the upstream authors for paving the way.
@@ -99,7 +122,3 @@ The initial content under `cezzu-rule/rules/` was forked from [`Predidit/KazumiR
 ## License
 
 MIT — see [LICENSE](./LICENSE).
-
-## Workflow
-
-This project uses [OpenSpec](https://github.com/cnobie/openspec) for spec-driven development. All change proposals, designs, and implementation tasks live under [`openspec/`](./openspec/).

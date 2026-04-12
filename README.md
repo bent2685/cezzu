@@ -24,8 +24,8 @@ Cezzu 是一个**单仓库多项目**（monorepo），当前包含两个 sibling
 
 ### 前置依赖
 
-- macOS 14+ + Xcode 16+（开发环境）
-- Swift 6
+- macOS 15+ + Xcode 26+（开发环境；`Package.swift` 要求 swift-tools-version 6.2）
+- Swift 6.2+
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen)：`brew install xcodegen`
 
 ### 运行时支持范围
@@ -76,6 +76,17 @@ swift test --filter CezzuRuleDecodingTests   # 单跑一个 suite
 
 只有需要验证 UI / 真机播放 / WebKit 嗅探时才必须开 Xcode。
 
+### 不开 Xcode 跑 macOS App
+
+`CezzuKit` 的 `Package.swift` 里还有一个 `CezzuMac` 可执行目标，可以直接用 SwiftPM 启动 macOS 版：
+
+```bash
+cd cezzu/CezzuKit
+swift run CezzuMac
+```
+
+不带 `.app` bundle、不入沙盒，适合快速验证非 UI 逻辑。正式打包仍走 Xcode。
+
 ### 子项目独立工作
 
 只想改规则内容（不碰 Swift 代码）→ 直接编辑 `cezzu-rule/rules/*.json`，然后跑 `./cezzu-rule/scripts/update_index.swift` 重新生成 `index.json`，详见 [`cezzu-rule/README.md`](./cezzu-rule/README.md)。
@@ -83,7 +94,7 @@ swift test --filter CezzuRuleDecodingTests   # 单跑一个 suite
 ## 平台与语言
 
 - **iOS 17+ / macOS 14+**（最低支持线；iOS 26+ / macOS 26+ 自动启用 Liquid Glass）
-- **Swift 6**，严格并发模式
+- **Swift 6**（swift-tools-version 6.2），严格并发模式
 - 唯一第三方依赖：[Kanna](https://github.com/tid-kijyun/Kanna)（XPath / HTML 解析）
 
 ## 设计目标
@@ -92,6 +103,18 @@ swift test --filter CezzuRuleDecodingTests   # 单跑一个 suite
 - **设计语言渐进增强**：iOS / macOS 一套 SwiftUI 代码；iOS 26+ 上走真正的 Liquid Glass，老平台回落到 `Material`，业务层无感知。所有玻璃效果统一从 `CezzuKit/Views/Design/Glass*.swift` 入口走，禁止手绘伪玻璃。
 - **逻辑零分叉**：核心代码在 `CezzuKit` 里，禁止 `#if os(iOS)` / `#if os(macOS)`，平台分叉只允许出现在 App target 入口；版本分叉走 `if #available`，只允许出现在 `Views/Design/` 内部。
 
+## 功能概览
+
+- **Bangumi 集成** — 接入 [番组计划](https://bgm.tv) API，搜索番剧、拉取元数据与制作人员信息
+- **弹幕系统** — 弹幕获取与播放器覆盖渲染，支持透明度、字号、速度等设置
+- **画中画 & 后台音频** — 播放器画中画 (PiP) 生命周期控制 + 后台音频播放
+- **HLS 本地反向代理** — Manifest 改写 + 防盗链 Header 注入，透明处理带鉴权的 HLS 流
+- **WebView 视频嗅探** — 通过 WebKit 自动提取页面中的视频地址，内置广告屏蔽规则
+- **多线路源切换** — 播放器内一键切换不同视频源线路
+- **观看历史** — 自动记录播放进度，下次打开自动续播
+- **规则源管理** — 支持订阅多个远程规则源，拉取、更新、导入一体化管理
+- **播放设置** — 倍速、弹幕、画质等播放参数可调
+
 ## 致谢
 
 `cezzu-rule/rules/` 的初始内容 fork 自 [`Predidit/KazumiRules`](https://github.com/Predidit/KazumiRules)（MIT License）。Cezzu 项目的整体构思也深受 [Kazumi](https://github.com/Predidit/Kazumi) 启发，感谢上游作者把这条路径走通。
@@ -99,7 +122,3 @@ swift test --filter CezzuRuleDecodingTests   # 单跑一个 suite
 ## License
 
 MIT — 详见 [LICENSE](./LICENSE)。
-
-## 工作流
-
-本项目使用 [OpenSpec](https://github.com/cnobie/openspec) 做规范驱动的开发，所有 change 提案、设计、实现任务都在 [`openspec/`](./openspec/) 目录下。
