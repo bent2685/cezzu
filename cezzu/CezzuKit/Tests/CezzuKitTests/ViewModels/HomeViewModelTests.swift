@@ -13,6 +13,7 @@ struct HomeViewModelTests {
         var keywordSearchResult: Result<[BangumiItem], BangumiAPIError> = .success([])
         private(set) var trendingCalls: Int = 0
         private(set) var searchCalls: [String] = []
+        private(set) var searchOffsets: [Int] = []
         private(set) var keywordSearchCalls: [(String, BangumiSearchSort, Int)] = []
 
         func trending(limit: Int, offset: Int) async throws -> [BangumiItem] {
@@ -25,6 +26,7 @@ struct HomeViewModelTests {
 
         func search(tag: String, limit: Int, offset: Int) async throws -> [BangumiItem] {
             searchCalls.append(tag)
+            searchOffsets.append(offset)
             switch searchResult {
             case .success(let items): return items
             case .failure(let error): throw error
@@ -187,6 +189,25 @@ struct HomeViewModelTests {
         #expect(vm.isLoadingMore == false)
         #expect(vm.hasMore == false)
         #expect(api.trendingCalls == 2)
+    }
+
+    @Test("loadMoreIfNeeded appends tagged page after API-capped first page")
+    func loadMoreAppendsTaggedPage() async {
+        let api = FakeBangumiAPI()
+        api.searchResult = .success((1...20).map { Self.makeItem(id: $0, name: "Item \($0)") })
+        let vm = HomeViewModel(api: api)
+
+        await vm.selectTag("日常")
+        await vm.waitForIdle()
+
+        api.searchResult = .success((21...25).map { Self.makeItem(id: $0, name: "Item \($0)") })
+        await vm.loadMoreIfNeeded(currentItem: vm.items[19])
+
+        #expect(vm.items.count == 25)
+        #expect(vm.items.last?.id == 25)
+        #expect(vm.hasMore == false)
+        #expect(api.searchCalls == ["日常", "日常"])
+        #expect(api.searchOffsets == [0, 20])
     }
 }
 

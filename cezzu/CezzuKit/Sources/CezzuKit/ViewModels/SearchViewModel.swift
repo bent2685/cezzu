@@ -15,7 +15,7 @@ public final class SearchViewModel {
     public private(set) var hasMore: Bool = false
     public private(set) var isLoadingMore: Bool = false
 
-    private static let pageSize: Int = 30
+    private static let pageSize: Int = 20
 
     private let api: BangumiAPIClientProtocol
     private var currentTask: Task<Void, Never>?

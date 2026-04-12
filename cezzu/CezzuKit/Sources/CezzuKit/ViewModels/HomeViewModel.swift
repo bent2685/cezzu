@@ -11,7 +11,7 @@ import Observation
 @Observable
 public final class HomeViewModel {
     private static let trendingPageSize: Int = 24
-    private static let taggedPageSize: Int = 30
+    private static let taggedPageSize: Int = 20
 
     public var currentTag: String = ""
     public private(set) var items: [BangumiItem] = []
