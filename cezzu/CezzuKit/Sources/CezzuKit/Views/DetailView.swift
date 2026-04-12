@@ -448,20 +448,54 @@ enum DetailBackdropColorSampler {
 }
 
 private enum DetailStyle {
-    static let background = Color(red: 0.025, green: 0.026, blue: 0.030)
-    static let backgroundRaised = Color(red: 0.055, green: 0.058, blue: 0.066)
-    static let surface = Color(red: 0.075, green: 0.080, blue: 0.092)
-    static let surfaceRaised = Color(red: 0.105, green: 0.110, blue: 0.125)
     static let netflixRed = Color(red: 0.90, green: 0.02, blue: 0.05)
-    static let textPrimary = Color.white
-    static let textSecondary = Color.white.opacity(0.70)
-    static let textTertiary = Color.white.opacity(0.48)
-    static let hairline = Color.white.opacity(0.10)
     static let cornerRadius: CGFloat = 8
+
+    static func palette(for colorScheme: ColorScheme) -> DetailPalette {
+        switch colorScheme {
+        case .dark:
+            return DetailPalette(
+                background: Color(red: 0.025, green: 0.026, blue: 0.030),
+                backgroundRaised: Color(red: 0.055, green: 0.058, blue: 0.066),
+                surface: Color(red: 0.075, green: 0.080, blue: 0.092),
+                surfaceRaised: Color(red: 0.105, green: 0.110, blue: 0.125),
+                textPrimary: .white,
+                textSecondary: .white.opacity(0.70),
+                textTertiary: .white.opacity(0.48),
+                hairline: .white.opacity(0.10),
+                backdropOpacity: 0.82
+            )
+        default:
+            return DetailPalette(
+                background: .white,
+                backgroundRaised: Color(red: 0.95, green: 0.96, blue: 0.97),
+                surface: Color.white.opacity(0.88),
+                surfaceRaised: Color(red: 0.93, green: 0.94, blue: 0.95),
+                textPrimary: Color(red: 0.05, green: 0.05, blue: 0.06),
+                textSecondary: Color(red: 0.20, green: 0.21, blue: 0.24),
+                textTertiary: Color(red: 0.42, green: 0.43, blue: 0.47),
+                hairline: Color.black.opacity(0.10),
+                backdropOpacity: 0.34
+            )
+        }
+    }
+}
+
+private struct DetailPalette {
+    let background: Color
+    let backgroundRaised: Color
+    let surface: Color
+    let surfaceRaised: Color
+    let textPrimary: Color
+    let textSecondary: Color
+    let textTertiary: Color
+    let hairline: Color
+    let backdropOpacity: Double
 }
 
 public struct DetailView: View {
     @Bindable var model: DetailViewModel
+    @Environment(\.colorScheme) private var colorScheme
     var onTapPlay: (PlaybackRequest) -> Void
     var onTapTag: (String) -> Void
 
@@ -503,7 +537,6 @@ public struct DetailView: View {
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
             .clipped()
-            .environment(\.colorScheme, .dark)
         }
         .ignoresSafeArea(edges: .top)
         .task {
@@ -511,10 +544,14 @@ public struct DetailView: View {
         }
     }
 
+    private var palette: DetailPalette {
+        DetailStyle.palette(for: colorScheme)
+    }
+
     @ViewBuilder
     private func detailBackdrop(viewportSize: CGSize) -> some View {
         ZStack(alignment: .topTrailing) {
-            DetailStyle.background
+            palette.background
                 .ignoresSafeArea()
             backgroundCover
                 .frame(
@@ -523,12 +560,12 @@ public struct DetailView: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                 .clipped()
-                .opacity(0.82)
+                .opacity(palette.backdropOpacity)
             LinearGradient(
                 colors: [
-                    DetailStyle.background,
-                    DetailStyle.background.opacity(0.96),
-                    DetailStyle.background.opacity(0.55),
+                    palette.background,
+                    palette.background.opacity(0.96),
+                    palette.background.opacity(0.55),
                     Color.clear,
                 ],
                 startPoint: .leading,
@@ -538,8 +575,8 @@ public struct DetailView: View {
             LinearGradient(
                 colors: [
                     Color.clear,
-                    DetailStyle.background.opacity(0.62),
-                    DetailStyle.background,
+                    palette.background.opacity(0.62),
+                    palette.background,
                 ],
                 startPoint: .top,
                 endPoint: .bottom
@@ -547,7 +584,7 @@ public struct DetailView: View {
             .ignoresSafeArea()
             LinearGradient(
                 colors: [
-                    DetailStyle.background.opacity(0.98),
+                    palette.background.opacity(0.98),
                     Color.clear,
                 ],
                 startPoint: .top,
@@ -589,12 +626,12 @@ public struct DetailView: View {
             if model.item.name != model.item.displayName {
                 Text(model.item.name)
                     .font(.headline.weight(.semibold))
-                    .foregroundStyle(DetailStyle.textSecondary)
+                    .foregroundStyle(palette.textSecondary)
                     .lineLimit(2)
             }
             Text(model.item.displayName)
                 .font(.system(size: titleSize, weight: .black))
-                .foregroundStyle(DetailStyle.textPrimary)
+                .foregroundStyle(palette.textPrimary)
                 .lineLimit(3)
                 .minimumScaleFactor(0.82)
             heroMeta
@@ -602,7 +639,7 @@ public struct DetailView: View {
                 Text(model.item.summary)
                     .font(.callout)
                     .lineSpacing(4)
-                    .foregroundStyle(DetailStyle.textSecondary)
+                    .foregroundStyle(palette.textSecondary)
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -630,7 +667,7 @@ public struct DetailView: View {
     @ViewBuilder
     private func metadataText(_ value: String) -> some View {
         Text(value)
-            .foregroundStyle(DetailStyle.textSecondary)
+            .foregroundStyle(palette.textSecondary)
     }
 
     @ViewBuilder
@@ -650,8 +687,8 @@ public struct DetailView: View {
                         LinearGradient(
                             colors: [
                                 model.backdropColor.opacity(0.80),
-                                DetailStyle.backgroundRaised,
-                                DetailStyle.background,
+                                palette.backgroundRaised,
+                                palette.background,
                             ],
                             startPoint: .topTrailing,
                             endPoint: .bottomLeading
@@ -672,11 +709,11 @@ public struct DetailView: View {
                     .aspectRatio(contentMode: .fill)
             default:
                 Rectangle()
-                    .fill(DetailStyle.surfaceRaised)
+                    .fill(palette.surfaceRaised)
                     .overlay {
                         Image(systemName: "tv")
                             .font(.system(size: 32, weight: .light))
-                            .foregroundStyle(DetailStyle.textTertiary)
+                            .foregroundStyle(palette.textTertiary)
                     }
             }
         }
@@ -684,7 +721,7 @@ public struct DetailView: View {
         .clipShape(RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
-                .strokeBorder(DetailStyle.hairline, lineWidth: 1)
+                .strokeBorder(palette.hairline, lineWidth: 1)
         }
         .shadow(color: .black.opacity(0.55), radius: 26, y: 16)
     }
@@ -726,21 +763,21 @@ public struct DetailView: View {
     private func statPill(title: String, value: String) -> some View {
         HStack(spacing: 8) {
             Text(title)
-                .foregroundStyle(DetailStyle.textTertiary)
+                .foregroundStyle(palette.textTertiary)
             Text(value)
-                .foregroundStyle(DetailStyle.textPrimary)
+                .foregroundStyle(palette.textPrimary)
                 .lineLimit(1)
         }
         .font(.caption.weight(.bold))
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(
-            DetailStyle.surface.opacity(0.78),
+            palette.surface.opacity(0.78),
             in: RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
         )
         .overlay {
             RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
-                .stroke(DetailStyle.hairline, lineWidth: 1)
+                .stroke(palette.hairline, lineWidth: 1)
         }
     }
 
@@ -786,7 +823,7 @@ public struct DetailView: View {
                         VStack(spacing: 8) {
                             Text(tab.title)
                                 .font(.subheadline.weight(.bold))
-                                .foregroundStyle(selected ? DetailStyle.textPrimary : DetailStyle.textSecondary)
+                                .foregroundStyle(selected ? palette.textPrimary : palette.textSecondary)
                             Rectangle()
                                 .fill(selected ? DetailStyle.netflixRed : Color.clear)
                                 .frame(height: 3)
@@ -813,19 +850,19 @@ public struct DetailView: View {
                         HStack(spacing: 6) {
                             Text(tag.name)
                             Text("\(tag.count)")
-                                .foregroundStyle(DetailStyle.textTertiary)
+                                .foregroundStyle(palette.textTertiary)
                         }
                         .font(.caption.weight(.medium))
-                        .foregroundStyle(DetailStyle.textSecondary)
+                        .foregroundStyle(palette.textSecondary)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
                         .background(
-                            DetailStyle.surfaceRaised.opacity(0.88),
+                            palette.surfaceRaised.opacity(0.88),
                             in: RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
                         )
                         .overlay {
                             RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
-                                .stroke(DetailStyle.hairline, lineWidth: 1)
+                                .stroke(palette.hairline, lineWidth: 1)
                         }
                     }
                     .buttonStyle(.plain)
@@ -847,7 +884,7 @@ public struct DetailView: View {
                         .foregroundStyle(.orange)
                     Text(error)
                         .font(.caption)
-                        .foregroundStyle(DetailStyle.textSecondary)
+                        .foregroundStyle(palette.textSecondary)
                         .multilineTextAlignment(.center)
                 }
             }
@@ -874,7 +911,7 @@ public struct DetailView: View {
                 overviewSection(title: "简介") {
                     Text(model.item.summary)
                         .font(.body)
-                        .foregroundStyle(DetailStyle.textSecondary)
+                        .foregroundStyle(palette.textSecondary)
                         .lineSpacing(5)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -895,7 +932,7 @@ public struct DetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text(title)
                 .font(.title3.weight(.bold))
-                .foregroundStyle(DetailStyle.textPrimary)
+                .foregroundStyle(palette.textPrimary)
             centeredPanel(content: content)
         }
     }
@@ -904,10 +941,10 @@ public struct DetailView: View {
     private var sourcesContent: some View {
         if model.isSearchingSources {
             ProgressView("正在匹配可播放源…")
-                .tint(DetailStyle.textPrimary)
+                .tint(palette.textPrimary)
         } else if model.sources.isEmpty {
             Text(model.sourceSearchFailed ?? "暂无可播放源")
-                .foregroundStyle(DetailStyle.textSecondary)
+                .foregroundStyle(palette.textSecondary)
         } else {
             VStack(alignment: .leading, spacing: 14) {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -919,16 +956,16 @@ public struct DetailView: View {
                             } label: {
                                 Text(source.ruleName)
                                     .font(.subheadline.weight(.bold))
-                                    .foregroundStyle(isSelected ? DetailStyle.textPrimary : DetailStyle.textSecondary)
+                                    .foregroundStyle(isSelected ? .white : palette.textSecondary)
                                     .padding(.horizontal, 14)
                                     .padding(.vertical, 10)
                                     .background(
-                                        isSelected ? DetailStyle.netflixRed.opacity(0.92) : DetailStyle.surfaceRaised,
+                                        isSelected ? DetailStyle.netflixRed.opacity(0.92) : palette.surfaceRaised,
                                         in: RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
                                     )
                                     .overlay {
                                         RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
-                                            .stroke(isSelected ? DetailStyle.netflixRed : DetailStyle.hairline, lineWidth: 1)
+                                            .stroke(isSelected ? DetailStyle.netflixRed : palette.hairline, lineWidth: 1)
                                     }
                             }
                             .buttonStyle(.plain)
@@ -951,17 +988,17 @@ public struct DetailView: View {
         switch model.selectedSourceState {
         case .idle:
             Text("请选择一个播放源。")
-                .foregroundStyle(DetailStyle.textSecondary)
+                .foregroundStyle(palette.textSecondary)
         case .loading:
             ProgressView("正在拉取剧集…")
-                .tint(DetailStyle.textPrimary)
+                .tint(palette.textPrimary)
         case .failed(let message):
             VStack(alignment: .leading, spacing: 8) {
                 Label("剧集加载失败", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.orange)
                 Text(message)
                     .font(.caption)
-                    .foregroundStyle(DetailStyle.textSecondary)
+                    .foregroundStyle(palette.textSecondary)
             }
         case .loaded(let detail):
             VStack(alignment: .leading, spacing: 16) {
@@ -989,18 +1026,18 @@ public struct DetailView: View {
                         } label: {
                             Text(episode.title)
                                 .font(.caption.weight(.semibold))
-                                .foregroundStyle(DetailStyle.textPrimary)
+                                .foregroundStyle(palette.textPrimary)
                                 .multilineTextAlignment(.center)
                                 .lineLimit(2)
                                 .frame(maxWidth: .infinity, minHeight: 56)
                                 .padding(.horizontal, 10)
                                 .background(
-                                    DetailStyle.surfaceRaised,
+                                    palette.surfaceRaised,
                                     in: RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
                                 )
                                 .overlay {
                                     RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
-                                        .stroke(DetailStyle.hairline, lineWidth: 1)
+                                        .stroke(palette.hairline, lineWidth: 1)
                                 }
                         }
                         .buttonStyle(.plain)
@@ -1015,7 +1052,7 @@ public struct DetailView: View {
         if model.comments.isEmpty {
             centeredPanel {
                 Text("暂无吐槽")
-                    .foregroundStyle(DetailStyle.textSecondary)
+                    .foregroundStyle(palette.textSecondary)
             }
         } else {
             VStack(spacing: 14) {
@@ -1031,7 +1068,7 @@ public struct DetailView: View {
                                     Spacer()
                                     Text(comment.publishedAt)
                                         .font(.caption)
-                                        .foregroundStyle(DetailStyle.textTertiary)
+                                        .foregroundStyle(palette.textTertiary)
                                 }
                                 HStack(spacing: 8) {
                                     if !comment.stateLabel.isEmpty {
@@ -1042,7 +1079,7 @@ public struct DetailView: View {
                                     }
                                 }
                                 .font(.caption)
-                                .foregroundStyle(DetailStyle.textTertiary)
+                                .foregroundStyle(palette.textTertiary)
                                 Text(comment.body)
                                     .font(.body)
                                     .fixedSize(horizontal: false, vertical: true)
@@ -1060,7 +1097,7 @@ public struct DetailView: View {
         if model.characters.isEmpty {
             centeredPanel {
                 Text("暂无角色数据")
-                    .foregroundStyle(DetailStyle.textSecondary)
+                    .foregroundStyle(palette.textSecondary)
             }
         } else {
             VStack(spacing: 16) {
@@ -1075,11 +1112,11 @@ public struct DetailView: View {
                                     .font(.headline)
                                 Text(character.relation)
                                     .font(.caption)
-                                    .foregroundStyle(DetailStyle.textTertiary)
+                                    .foregroundStyle(palette.textTertiary)
                                 if !character.summary.isEmpty {
                                     Text(character.summary)
                                         .font(.caption)
-                                        .foregroundStyle(DetailStyle.textSecondary)
+                                        .foregroundStyle(palette.textSecondary)
                                         .lineLimit(4)
                                 }
                                 if let actor = character.actors.first {
@@ -1100,7 +1137,7 @@ public struct DetailView: View {
         if model.reviews.isEmpty {
             centeredPanel {
                 Text("暂无评论")
-                    .foregroundStyle(DetailStyle.textSecondary)
+                    .foregroundStyle(palette.textSecondary)
             }
         } else {
             VStack(spacing: 14) {
@@ -1122,7 +1159,7 @@ public struct DetailView: View {
                                     }
                                 }
                                 .font(.caption)
-                                .foregroundStyle(DetailStyle.textTertiary)
+                                .foregroundStyle(palette.textTertiary)
                                 if !review.summary.isEmpty {
                                     Text(review.summary)
                                         .font(.body)
@@ -1142,7 +1179,7 @@ public struct DetailView: View {
         if model.staff.isEmpty {
             centeredPanel {
                 Text("暂无制作人员数据")
-                    .foregroundStyle(DetailStyle.textSecondary)
+                    .foregroundStyle(palette.textSecondary)
             }
         } else {
             VStack(spacing: 14) {
@@ -1157,17 +1194,17 @@ public struct DetailView: View {
                                     Spacer()
                                     Text(person.relation)
                                         .font(.caption)
-                                        .foregroundStyle(DetailStyle.textTertiary)
+                                        .foregroundStyle(palette.textTertiary)
                                 }
                                 if !person.career.isEmpty {
                                     Text(person.career.joined(separator: " · "))
                                         .font(.caption)
-                                        .foregroundStyle(DetailStyle.textTertiary)
+                                        .foregroundStyle(palette.textTertiary)
                                 }
                                 if !person.eps.isEmpty {
                                     Text(person.eps)
                                         .font(.caption)
-                                        .foregroundStyle(DetailStyle.textTertiary)
+                                        .foregroundStyle(palette.textTertiary)
                                 }
                             }
                         }
@@ -1184,12 +1221,12 @@ public struct DetailView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(18)
             .background(
-                DetailStyle.surface.opacity(0.90),
+                palette.surface.opacity(0.90),
                 in: RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
             )
             .overlay {
                 RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
-                    .stroke(DetailStyle.hairline, lineWidth: 1)
+                    .stroke(palette.hairline, lineWidth: 1)
         }
         .frame(maxWidth: .infinity)
     }
@@ -1211,11 +1248,11 @@ public struct DetailView: View {
                     .aspectRatio(contentMode: .fill)
             default:
                 RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
-                    .fill(DetailStyle.surfaceRaised)
+                    .fill(palette.surfaceRaised)
                     .overlay {
                         Text(String(title.prefix(1)))
                             .font(.headline.weight(.bold))
-                            .foregroundStyle(DetailStyle.textSecondary)
+                            .foregroundStyle(palette.textSecondary)
                     }
             }
         }
