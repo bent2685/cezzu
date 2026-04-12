@@ -172,9 +172,12 @@ test: 给 CezzuRule decoding 补 antiCrawlerConfig 测试
 
 ```
 cezzu/CezzuKit/Tests/CezzuKitTests/
-├── Storage/         # LocalRuleStore, HistoryStore, SeededRuleLoader
-├── Rules/           # CezzuRule decoding, RuleEngine XPath subset
-├── Playback/        # HLS manifest rewriter
+├── Bangumi/         # BangumiItem decoding, BangumiAPIClient
+├── Playback/        # HLS manifest rewriter, PiP lifecycle, danmaku, source switcher
+├── Rules/           # CezzuRule decoding, RuleEngine XPath subset, RuleCatalogEntry
+├── Storage/         # LocalRuleStore, HistoryStore, SeededRuleLoader, RuleSourceStore
+├── ViewModels/      # SearchViewModel, HomeViewModel, DetailViewModel
+├── Views/           # BangumiCardLayout
 └── ...
 ```
 
