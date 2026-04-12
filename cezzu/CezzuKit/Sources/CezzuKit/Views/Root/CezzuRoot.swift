@@ -253,7 +253,6 @@ struct SplitRootView: View {
     @State private var searchModel: SearchViewModel
     @State private var homeModel: HomeViewModel
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
-    @State private var splitBackdropItem: BangumiItem?
 
     enum SidebarItem: Hashable, Identifiable {
         case home, history, rules, settings
@@ -323,43 +322,15 @@ struct SplitRootView: View {
                 }
             #endif
         }()
-        return ZStack {
-            splitBackdrop
-            content
-                .background(.clear)
-                .environment(
-                    \.playerChromeController,
-                    PlayerChromeController { hidden in
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            visibilityBinding.wrappedValue =
-                                hidden ? .detailOnly : .all
-                        }
-                    }
-                )
-        }
-    }
-
-    @ViewBuilder
-    private var splitBackdrop: some View {
-        if let item = splitBackdropItem {
-            ZStack {
-                Color(red: 0.10, green: 0.16, blue: 0.28)
-                AsyncImage(url: URL(string: item.images.best)) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .scaleEffect(1.04)
-                            .opacity(0.26)
-                    default:
-                        Color.clear
-                    }
+        return content.environment(
+            \.playerChromeController,
+            PlayerChromeController { hidden in
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    visibilityBinding.wrappedValue =
+                        hidden ? .detailOnly : .all
                 }
-                Color(red: 0.10, green: 0.16, blue: 0.28).opacity(0.58)
             }
-            .ignoresSafeArea()
-        }
+        )
     }
 
     private var sidebar: some View {
@@ -372,8 +343,6 @@ struct SplitRootView: View {
             }
         }
         .navigationTitle("Cezzu")
-        .scrollContentBackground(.hidden)
-        .background(.clear)
     }
 
     @ViewBuilder
@@ -385,18 +354,14 @@ struct SplitRootView: View {
                 onTapItem: { item in path.append(Route.detail(item)) },
                 onTapSearch: { path.append(Route.search) }
             )
-            .onAppear { splitBackdropItem = nil }
         case .history:
             HistoryView(history: session.history) { entry in
                 path.append(Route.historyDetail(historyHint(from: entry)))
             }
-            .onAppear { splitBackdropItem = nil }
         case .rules:
             RuleManagerView(store: session.store)
-                .onAppear { splitBackdropItem = nil }
         case .settings:
             SettingsView()
-                .onAppear { splitBackdropItem = nil }
         }
     }
 
@@ -427,7 +392,6 @@ struct SplitRootView: View {
                 Task { await searchModel.submit() }
                 path.append(Route.search)
             }
-            .onAppear { splitBackdropItem = item }
         case .historyDetail(let hint):
             DetailView(
                 model: DetailViewModel(
@@ -443,7 +407,6 @@ struct SplitRootView: View {
                 Task { await searchModel.submit() }
                 path.append(Route.search)
             }
-            .onAppear { splitBackdropItem = hint.item }
         case .episodes(let detail):
             if let rule = session.store.installedRules.first(where: { $0.name == detail.ruleName })?.rule {
                 EpisodeListView(detail: detail, rule: rule) { req in
