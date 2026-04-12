@@ -148,6 +148,84 @@ struct BangumiItemDecodingTests {
         #expect(BangumiImages.empty.best.isEmpty)
     }
 
+    /// 完整 subject 接口返回的 eps / platform / rating.total / infobox 能正确解码。
+    @Test("full subject: eps, platform, ratingTotal, and infobox duration decode")
+    func decodeFullSubjectFields() throws {
+        let json = """
+        {
+            "id": 467461,
+            "name": "ダンダダン",
+            "name_cn": "胆大党",
+            "summary": "",
+            "date": "2024-10-03",
+            "eps": 12,
+            "platform": "TV",
+            "images": {"large": "L", "common": "C", "medium": "M", "small": "S", "grid": "G"},
+            "rating": {"rank": 954, "score": 7.5, "total": 15667},
+            "tags": [],
+            "infobox": [
+                {"key": "中文名", "value": "胆大党"},
+                {"key": "话数", "value": "12"},
+                {"key": "放送开始", "value": "2024年10月3日"},
+                {"key": "放送星期", "value": "星期四"},
+                {"key": "别名", "value": [{"v": "当哒当"}, {"v": "DAN DA DAN"}]}
+            ]
+        }
+        """
+        let item = try JSONDecoder().decode(BangumiItem.self, from: Data(json.utf8))
+        #expect(item.eps == 12)
+        #expect(item.platform == "TV")
+        #expect(item.ratingTotal == 15667)
+        #expect(item.episodeDuration == "")
+    }
+
+    /// 剧场版的"片长"能从 infobox 里正确提取。
+    @Test("movie infobox: 片长 extracted as episodeDuration")
+    func decodeMovieDuration() throws {
+        let json = """
+        {
+            "id": 425,
+            "name": "Movie Title",
+            "name_cn": "电影标题",
+            "summary": "",
+            "date": "1980-03-15",
+            "eps": 1,
+            "platform": "剧场版",
+            "images": {"large": "L", "common": "C", "medium": "M", "small": "S", "grid": "G"},
+            "rating": {"rank": 100, "score": 8.0, "total": 500},
+            "tags": [],
+            "infobox": [
+                {"key": "片长", "value": "92分钟"},
+                {"key": "上映年度", "value": "1980年3月15日"}
+            ]
+        }
+        """
+        let item = try JSONDecoder().decode(BangumiItem.self, from: Data(json.utf8))
+        #expect(item.eps == 1)
+        #expect(item.platform == "剧场版")
+        #expect(item.ratingTotal == 500)
+        #expect(item.episodeDuration == "92分钟")
+    }
+
+    /// 搜索/趋势接口不返回 eps / platform / infobox 时应回落到默认值。
+    @Test("missing eps, platform, infobox defaults gracefully")
+    func decodeMissingSubjectFields() throws {
+        let json = """
+        {
+            "id": 1,
+            "name": "Minimal",
+            "name_cn": "极简",
+            "images": {"large": "L", "common": "C", "medium": "M", "small": "S", "grid": "G"},
+            "rating": {"rank": 0, "score": 0}
+        }
+        """
+        let item = try JSONDecoder().decode(BangumiItem.self, from: Data(json.utf8))
+        #expect(item.eps == 0)
+        #expect(item.platform == "")
+        #expect(item.ratingTotal == 0)
+        #expect(item.episodeDuration == "")
+    }
+
     /// 编码后能往返解码（roundtrip）。
     @Test("roundtrip: encode then decode preserves all fields")
     func roundtripEncoding() throws {
@@ -162,7 +240,10 @@ struct BangumiItemDecodingTests {
             images: BangumiImages(
                 large: "L", common: "C", medium: "M", small: "S", grid: "G"
             ),
-            tags: [BangumiTag(name: "奇幻", count: 100)]
+            tags: [BangumiTag(name: "奇幻", count: 100)],
+            ratingTotal: 999,
+            eps: 24,
+            platform: "TV"
         )
         let data = try JSONEncoder().encode(original)
         let restored = try JSONDecoder().decode(BangumiItem.self, from: data)
@@ -174,5 +255,8 @@ struct BangumiItemDecodingTests {
         #expect(restored.ratingScore == original.ratingScore)
         #expect(restored.images.large == "L")
         #expect(restored.tags.first?.name == "奇幻")
+        #expect(restored.eps == 24)
+        #expect(restored.platform == "TV")
+        #expect(restored.ratingTotal == 999)
     }
 }

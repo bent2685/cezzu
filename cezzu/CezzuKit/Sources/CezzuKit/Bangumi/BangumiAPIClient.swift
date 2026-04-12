@@ -19,6 +19,7 @@ public protocol BangumiAPIClientProtocol: Sendable {
         limit: Int,
         offset: Int
     ) async throws -> [BangumiItem]
+    func fetchSubject(subjectID: Int) async throws -> BangumiItem
     func fetchTags(subjectID: Int) async throws -> [BangumiTag]
     func fetchCharacters(subjectID: Int) async throws -> [BangumiRelatedCharacter]
     func fetchPersons(subjectID: Int) async throws -> [BangumiRelatedPerson]
@@ -120,14 +121,18 @@ public actor BangumiAPIClient: BangumiAPIClientProtocol {
         )
     }
 
-    public func fetchTags(subjectID: Int) async throws -> [BangumiTag] {
+    public func fetchSubject(subjectID: Int) async throws -> BangumiItem {
         let req = try makeAPIRequest(path: "/v0/subjects/\(subjectID)")
         let data = try await perform(req)
         do {
-            return try JSONDecoder().decode(BangumiItem.self, from: data).tags
+            return try JSONDecoder().decode(BangumiItem.self, from: data)
         } catch {
             throw BangumiAPIError.decoding(message: String(describing: error))
         }
+    }
+
+    public func fetchTags(subjectID: Int) async throws -> [BangumiTag] {
+        try await fetchSubject(subjectID: subjectID).tags
     }
 
     public func fetchCharacters(subjectID: Int) async throws -> [BangumiRelatedCharacter] {

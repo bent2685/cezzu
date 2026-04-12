@@ -47,6 +47,12 @@ struct HomeViewModelTests {
             }
         }
 
+        func fetchSubject(subjectID: Int) async throws -> BangumiItem {
+            BangumiItem(
+                id: subjectID, name: "", nameCn: "", summary: "", airDate: "",
+                rank: 0, ratingScore: 0, images: .empty, tags: []
+            )
+        }
         func fetchTags(subjectID: Int) async throws -> [BangumiTag] { [] }
         func fetchCharacters(subjectID: Int) async throws -> [BangumiRelatedCharacter] { [] }
         func fetchPersons(subjectID: Int) async throws -> [BangumiRelatedPerson] { [] }

@@ -65,6 +65,14 @@ struct DetailViewModelTests {
             offset: Int
         ) async throws -> [BangumiItem] { [] }
 
+        func fetchSubject(subjectID: Int) async throws -> BangumiItem {
+            let tags = tagsBySubjectID[subjectID] ?? []
+            return BangumiItem(
+                id: subjectID, name: "", nameCn: "", summary: "", airDate: "",
+                rank: 0, ratingScore: 0, images: .empty, tags: tags
+            )
+        }
+
         func fetchTags(subjectID: Int) async throws -> [BangumiTag] {
             tagsBySubjectID[subjectID] ?? []
         }

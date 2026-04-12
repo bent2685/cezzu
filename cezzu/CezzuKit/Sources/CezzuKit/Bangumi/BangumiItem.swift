@@ -17,6 +17,10 @@ public struct BangumiItem: Hashable, Sendable, Identifiable, Codable {
     public let airDate: String
     public let rank: Int
     public let ratingScore: Double
+    public let ratingTotal: Int
+    public let eps: Int
+    public let platform: String
+    public let episodeDuration: String
     public let images: BangumiImages
     public let tags: [BangumiTag]
 
@@ -29,7 +33,11 @@ public struct BangumiItem: Hashable, Sendable, Identifiable, Codable {
         rank: Int,
         ratingScore: Double,
         images: BangumiImages,
-        tags: [BangumiTag]
+        tags: [BangumiTag],
+        ratingTotal: Int = 0,
+        eps: Int = 0,
+        platform: String = "",
+        episodeDuration: String = ""
     ) {
         self.id = id
         self.name = name
@@ -38,6 +46,10 @@ public struct BangumiItem: Hashable, Sendable, Identifiable, Codable {
         self.airDate = airDate
         self.rank = rank
         self.ratingScore = ratingScore
+        self.ratingTotal = ratingTotal
+        self.eps = eps
+        self.platform = platform
+        self.episodeDuration = episodeDuration
         self.images = images
         self.tags = tags
     }
@@ -61,11 +73,15 @@ public struct BangumiItem: Hashable, Sendable, Identifiable, Codable {
         case image                       // 旧 API 顶层 image 字段
         case rating
         case tags
+        case eps
+        case platform
+        case infobox
     }
 
     private enum RatingKeys: String, CodingKey {
         case rank
         case score
+        case total
     }
 
     public init(from decoder: any Decoder) throws {
@@ -99,13 +115,28 @@ public struct BangumiItem: Hashable, Sendable, Identifiable, Codable {
         if let rc = try? c.nestedContainer(keyedBy: RatingKeys.self, forKey: .rating) {
             self.rank = (try? rc.decode(Int.self, forKey: .rank)) ?? 0
             self.ratingScore = (try? rc.decode(Double.self, forKey: .score)) ?? 0.0
+            self.ratingTotal = (try? rc.decode(Int.self, forKey: .total)) ?? 0
         } else {
             self.rank = 0
             self.ratingScore = 0.0
+            self.ratingTotal = 0
         }
 
         // tags：缺失时空数组
         self.tags = (try? c.decode([BangumiTag].self, forKey: .tags)) ?? []
+
+        // eps / platform：仅完整 subject 接口返回
+        self.eps = (try? c.decode(Int.self, forKey: .eps)) ?? 0
+        self.platform = (try? c.decode(String.self, forKey: .platform)) ?? ""
+
+        // infobox → 提取片长（剧场版用 "片长"，TV 可能用 "每集时长"）
+        if let entries = try? c.decode([InfoboxEntry].self, forKey: .infobox) {
+            self.episodeDuration = entries.first(where: {
+                $0.key == "片长" || $0.key == "每集时长" || $0.key == "时长"
+            })?.stringValue ?? ""
+        } else {
+            self.episodeDuration = ""
+        }
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -118,8 +149,47 @@ public struct BangumiItem: Hashable, Sendable, Identifiable, Codable {
         try c.encode(airDate, forKey: .date)
         try c.encode(images, forKey: .images)
         try c.encode(tags, forKey: .tags)
+        try c.encode(eps, forKey: .eps)
+        try c.encode(platform, forKey: .platform)
         var rc = c.nestedContainer(keyedBy: RatingKeys.self, forKey: .rating)
         try rc.encode(rank, forKey: .rank)
         try rc.encode(ratingScore, forKey: .score)
+        try rc.encode(ratingTotal, forKey: .total)
+    }
+}
+
+// MARK: - Infobox decoding (private)
+
+/// Bangumi `/v0/subjects/{id}` 返回的 infobox 条目。
+/// `value` 可以是纯字符串，也可以是 `[{"k": "...", "v": "..."}]` 数组。
+private struct InfoboxEntry: Decodable {
+    let key: String
+    let value: Value
+
+    enum Value: Decodable {
+        case string(String)
+        case array([Item])
+
+        struct Item: Decodable {
+            let v: String
+        }
+
+        init(from decoder: any Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            if let str = try? container.decode(String.self) {
+                self = .string(str)
+            } else if let items = try? container.decode([Item].self) {
+                self = .array(items)
+            } else {
+                self = .string("")
+            }
+        }
+    }
+
+    var stringValue: String {
+        switch value {
+        case .string(let s): return s
+        case .array(let items): return items.map(\.v).joined(separator: "、")
+        }
     }
 }

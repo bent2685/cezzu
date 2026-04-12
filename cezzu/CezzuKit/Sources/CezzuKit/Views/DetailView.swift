@@ -59,6 +59,11 @@ public final class DetailViewModel {
     public private(set) var characters: [BangumiRelatedCharacter] = []
     public private(set) var staff: [BangumiRelatedPerson] = []
     public private(set) var tags: [BangumiTag]
+    public private(set) var airDate: String = ""
+    public private(set) var eps: Int = 0
+    public private(set) var platform: String = ""
+    public private(set) var episodeDuration: String = ""
+    public private(set) var ratingTotal: Int = 0
     public private(set) var backdropColor: Color = Color(red: 0.10, green: 0.16, blue: 0.28)
     public private(set) var loadingTabs: Set<DetailTab> = []
     public private(set) var tabErrors: [DetailTab: String] = [:]
@@ -85,6 +90,7 @@ public final class DetailViewModel {
         self.searchCoordinator = searchCoordinator
         self.engine = engine
         self.tags = item.tags
+        self.airDate = item.airDate
     }
 
     public func load() async {
@@ -163,8 +169,8 @@ public final class DetailViewModel {
         if item.ratingScore > 0 {
             parts.append(String(format: "%.1f", item.ratingScore))
         }
-        if !item.airDate.isEmpty {
-            parts.append(item.airDate)
+        if !airDate.isEmpty {
+            parts.append(airDate)
         }
         if item.rank > 0 {
             parts.append("Rank #\(item.rank)")
@@ -318,9 +324,17 @@ public final class DetailViewModel {
     private func loadTagsIfNeeded() async {
         guard tags.isEmpty, item.id > 0 else { return }
         do {
-            tags = try await api.fetchTags(subjectID: item.id)
+            let subject = try await api.fetchSubject(subjectID: item.id)
+            tags = subject.tags
+            if !subject.airDate.isEmpty {
+                airDate = subject.airDate
+            }
+            eps = subject.eps
+            platform = subject.platform
+            episodeDuration = subject.episodeDuration
+            ratingTotal = subject.ratingTotal
         } catch {
-            // 标签加载失败时不影响详情页主体内容。
+            // 详情加载失败时不影响详情页主体内容。
         }
     }
 
@@ -678,14 +692,29 @@ public struct DetailView: View {
     private var heroMeta: some View {
         WrapLayout(spacing: 10, lineSpacing: 8) {
             if model.item.ratingScore > 0 {
-                Label(String(format: "%.1f", model.item.ratingScore), systemImage: "star.fill")
-                    .foregroundStyle(.yellow)
+                HStack(spacing: 4) {
+                    Label(String(format: "%.1f", model.item.ratingScore), systemImage: "star.fill")
+                        .foregroundStyle(.yellow)
+                    if model.ratingTotal > 0 {
+                        metadataText("(\(model.ratingTotal)人评分)")
+                    }
+                }
             }
-            if !model.item.airDate.isEmpty {
-                metadataText(model.item.airDate)
+            if !model.airDate.isEmpty {
+                Label(model.airDate, systemImage: "calendar")
+                    .foregroundStyle(palette.textSecondary)
             }
             if model.item.rank > 0 {
                 metadataText("Rank #\(model.item.rank)")
+            }
+            if !model.platform.isEmpty {
+                metadataText(model.platform)
+            }
+            if model.eps > 0 {
+                metadataText("\(model.eps)话")
+            }
+            if !model.episodeDuration.isEmpty {
+                metadataText(model.episodeDuration)
             }
         }
         .font(.subheadline.weight(.bold))
