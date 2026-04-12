@@ -254,6 +254,7 @@ struct SplitRootView: View {
     @State private var searchModel: SearchViewModel
     @State private var homeModel: HomeViewModel
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var detailChromeFillActive = false
 
     enum SidebarItem: Hashable, Identifiable {
         case home, history, rules, settings
@@ -320,36 +321,42 @@ struct SplitRootView: View {
                 }
             #endif
         }()
-        return content.environment(
-            \.playerChromeController,
-            PlayerChromeController { hidden in
-                withAnimation(.easeInOut(duration: 0.25)) {
-                    visibilityBinding.wrappedValue =
-                        hidden ? .detailOnly : .all
+        return content
+            .background {
+                if detailChromeFillActive {
+                    detailChromeFillColor
+                        .ignoresSafeArea()
                 }
             }
-        )
+            .environment(
+                \.playerChromeController,
+                PlayerChromeController { hidden in
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        visibilityBinding.wrappedValue =
+                            hidden ? .detailOnly : .all
+                    }
+                }
+            )
+            .onChange(of: path.count) { _, count in
+                if count == 0 {
+                    detailChromeFillActive = false
+                }
+            }
     }
 
     private var sidebar: some View {
-        ZStack {
-            sidebarBackground
-                .ignoresSafeArea()
-            List(selection: $sidebarItem) {
-                ForEach(
-                    [SidebarItem.home, .history, .rules, .settings]
-                ) { item in
-                    Label(item.label, systemImage: item.systemImage)
-                        .tag(item)
-                }
+        List(selection: $sidebarItem) {
+            ForEach(
+                [SidebarItem.home, .history, .rules, .settings]
+            ) { item in
+                Label(item.label, systemImage: item.systemImage)
+                    .tag(item)
             }
-            .scrollContentBackground(.hidden)
         }
-        .background(sidebarBackground.ignoresSafeArea())
         .navigationTitle("Cezzu")
     }
 
-    private var sidebarBackground: Color {
+    private var detailChromeFillColor: Color {
         colorScheme == .dark ? .black : .white
     }
 
@@ -362,14 +369,18 @@ struct SplitRootView: View {
                 onTapItem: { item in path.append(Route.detail(item)) },
                 onTapSearch: { path.append(Route.search) }
             )
+            .onAppear { detailChromeFillActive = false }
         case .history:
             HistoryView(history: session.history) { entry in
                 path.append(Route.historyDetail(historyHint(from: entry)))
             }
+            .onAppear { detailChromeFillActive = false }
         case .rules:
             RuleManagerView(store: session.store)
+                .onAppear { detailChromeFillActive = false }
         case .settings:
             SettingsView()
+                .onAppear { detailChromeFillActive = false }
         }
     }
 
@@ -382,10 +393,12 @@ struct SplitRootView: View {
                 onTapItem: { item in path.append(Route.detail(item)) },
                 onTapSearch: { path.append(Route.search) }
             )
+            .onAppear { detailChromeFillActive = false }
         case .search:
             SearchView(model: searchModel) { item in
                 path.append(Route.detail(item))
             }
+            .onAppear { detailChromeFillActive = false }
         case .detail(let item):
             DetailView(
                 model: DetailViewModel(
@@ -400,6 +413,7 @@ struct SplitRootView: View {
                 Task { await searchModel.submit() }
                 path.append(Route.search)
             }
+            .onAppear { detailChromeFillActive = true }
         case .historyDetail(let hint):
             DetailView(
                 model: DetailViewModel(
@@ -415,11 +429,13 @@ struct SplitRootView: View {
                 Task { await searchModel.submit() }
                 path.append(Route.search)
             }
+            .onAppear { detailChromeFillActive = true }
         case .episodes(let detail):
             if let rule = session.store.installedRules.first(where: { $0.name == detail.ruleName })?.rule {
                 EpisodeListView(detail: detail, rule: rule) { req in
                     path.append(Route.player(req))
                 }
+                .onAppear { detailChromeFillActive = false }
             }
         case .player(let req):
             PlayerView(
@@ -427,8 +443,10 @@ struct SplitRootView: View {
                 coordinator: PlaybackCoordinator(history: session.history),
                 history: session.history
             )
+            .onAppear { detailChromeFillActive = false }
         default:
             EmptyView()
+                .onAppear { detailChromeFillActive = false }
         }
     }
 
