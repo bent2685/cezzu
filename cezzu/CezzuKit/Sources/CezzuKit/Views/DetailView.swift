@@ -465,29 +465,28 @@ public struct DetailView: View {
     public var body: some View {
         GeometryReader { proxy in
             let bottomInset = max(112, proxy.safeAreaInsets.bottom + 56)
-            ZStack(alignment: .top) {
-                heroBackdrop(viewportSize: proxy.size)
-                ScrollView {
-                    VStack(spacing: 0) {
-                        hero
-                            .frame(maxWidth: .infinity)
-                        VStack(spacing: 24) {
-                            if !model.tags.isEmpty {
-                                tagListSection
-                            }
-                            tabs
-                            tabContent
-                        }
-                        .frame(maxWidth: 780)
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 20)
+            ScrollView {
+                VStack(spacing: 0) {
+                hero
+                    .frame(maxWidth: .infinity)
+                VStack(spacing: 24) {
+                    if !model.tags.isEmpty {
+                        tagListSection
                     }
+                    tabs
+                    tabContent
                 }
-                .contentMargins(.horizontal, 20, for: .scrollContent)
-                .contentMargins(.bottom, bottomInset, for: .scrollContent)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .frame(maxWidth: 780)
+                .frame(maxWidth: .infinity)
+                    .padding(.top, 20)
+                }
             }
+            .contentMargins(.horizontal, 20, for: .scrollContent)
+            .contentMargins(.bottom, bottomInset, for: .scrollContent)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .background {
+                heroBackdrop(viewportSize: proxy.size)
+            }
         }
         .ignoresSafeArea(edges: .top)
         .task {
@@ -533,19 +532,16 @@ public struct DetailView: View {
 
     @ViewBuilder
     private func heroBackdrop(viewportSize: CGSize) -> some View {
-        let backdropSize = CGSize(
-            width: viewportSize.width + 720,
-            height: max(viewportSize.height + 220, 980)
-        )
         ZStack(alignment: .top) {
             model.backdropColor.opacity(0.28)
                 .ignoresSafeArea()
             backgroundCover
                 .frame(
-                    width: backdropSize.width,
-                    height: backdropSize.height
+                    width: viewportSize.width + 560,
+                    height: max(viewportSize.height + 220, 980)
                 )
-                .offset(x: -220)
+                .padding(.leading, -420)
+                .padding(.trailing, -120)
                 .ignoresSafeArea()
             LinearGradient(
                 colors: [
@@ -558,10 +554,11 @@ public struct DetailView: View {
                 endPoint: .bottom
             )
             .frame(
-                width: backdropSize.width,
-                height: backdropSize.height
+                width: viewportSize.width + 560,
+                height: max(viewportSize.height + 220, 980)
             )
-            .offset(x: -220)
+            .padding(.leading, -420)
+            .padding(.trailing, -120)
             .ignoresSafeArea()
         }
         .allowsHitTesting(false)
