@@ -47,8 +47,13 @@ public struct PlayerSurface: View {
 @Observable
 public final class PlayerPictureInPictureController {
     public private(set) var isSupported: Bool = false
+    public private(set) var isActive: Bool = false
 
     private var startImpl: @MainActor () -> Void = {}
+    private var didStartLifecycleImpl: @MainActor () -> Void = {}
+    private var restoreLifecycleImpl: @MainActor (@escaping (Bool) -> Void) -> Void = { completion in
+        completion(true)
+    }
 
     public init() {}
 
@@ -63,6 +68,29 @@ public final class PlayerPictureInPictureController {
     ) {
         self.isSupported = isSupported
         self.startImpl = start
+    }
+
+    func setLifecycle(
+        didStart: @escaping @MainActor () -> Void = {},
+        restoreUserInterface: @escaping @MainActor (@escaping (Bool) -> Void) -> Void = { completion in
+            completion(true)
+        }
+    ) {
+        self.didStartLifecycleImpl = didStart
+        self.restoreLifecycleImpl = restoreUserInterface
+    }
+
+    fileprivate func handleDidStart() {
+        isActive = true
+        didStartLifecycleImpl()
+    }
+
+    fileprivate func handleWillStop() {
+        isActive = false
+    }
+
+    fileprivate func handleRestoreUserInterface(completion: @escaping (Bool) -> Void) {
+        restoreLifecycleImpl(completion)
     }
 }
 
@@ -114,13 +142,15 @@ public final class PlayerPictureInPictureController {
         }
 
         @MainActor
-        final class Coordinator: NSObject, AVPictureInPictureControllerDelegate {
+        final class Coordinator: NSObject, AVPictureInPictureControllerDelegate, @unchecked Sendable {
             private var controller: AVPictureInPictureController?
+            private weak var bridge: PlayerPictureInPictureController?
 
             func attachPictureInPicture(
                 to layer: AVPlayerLayer,
                 bridge: PlayerPictureInPictureController?
             ) {
+                self.bridge = bridge
                 guard let bridge else {
                     controller = nil
                     return
@@ -144,6 +174,28 @@ public final class PlayerPictureInPictureController {
 
                 bridge.configure(isSupported: controller != nil) { [weak self] in
                     self?.controller?.startPictureInPicture()
+                }
+            }
+
+            nonisolated func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+                MainActor.assumeIsolated {
+                    self.bridge?.handleDidStart()
+                }
+            }
+
+            nonisolated func pictureInPictureControllerWillStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+                MainActor.assumeIsolated {
+                    self.bridge?.handleWillStop()
+                }
+            }
+
+            nonisolated func pictureInPictureController(
+                _ pictureInPictureController: AVPictureInPictureController,
+                restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void
+            ) {
+                nonisolated(unsafe) let handler = completionHandler
+                MainActor.assumeIsolated {
+                    self.bridge?.handleRestoreUserInterface(completion: handler) ?? handler(true)
                 }
             }
         }
