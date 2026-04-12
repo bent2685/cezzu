@@ -467,8 +467,6 @@ public struct DetailView: View {
             let bottomInset = max(112, proxy.safeAreaInsets.bottom + 56)
             ZStack(alignment: .top) {
                 heroBackdrop(viewportSize: proxy.size)
-                    .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
-                    .clipped()
                 ScrollView {
                     VStack(spacing: 0) {
                         hero
@@ -487,10 +485,9 @@ public struct DetailView: View {
                 }
                 .contentMargins(.horizontal, 20, for: .scrollContent)
                 .contentMargins(.bottom, bottomInset, for: .scrollContent)
-                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
-            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
-            .clipped()
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .ignoresSafeArea(edges: .top)
         .task {
