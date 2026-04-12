@@ -369,7 +369,7 @@ struct SplitRootView: View {
     }
 
     private var detailChromeFillColor: Color {
-        colorScheme == .dark ? .black : .white
+        colorScheme == .dark ? Color(red: 0.020, green: 0.020, blue: 0.024) : .white
     }
 
     private var showsDetailChromeFill: Bool {
