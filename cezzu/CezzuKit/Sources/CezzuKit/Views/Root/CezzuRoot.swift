@@ -6,23 +6,20 @@ import SwiftUI
 /// 内部根据 `horizontalSizeClass` 选择 TabView（iPhone）或 NavigationSplitView
 /// （iPad / Mac）。逻辑层零分叉。
 public struct CezzuRoot: View {
-    @State private var session: CezzuSession?
+    @State private var session: CezzuSession = .empty()
+    @State private var didInitializePersistentSession: Bool = false
 
     public init() {}
 
     public var body: some View {
-        Group {
-            if let session {
-                CezzuRootContent(session: session)
-                    .environment(session.store)
-                    .environment(session.history)
-            } else {
-                ProgressView("正在启动 Cezzu…")
-                    .task {
-                        await initialize()
-                    }
+        CezzuRootContent(session: session)
+            .environment(session.store)
+            .environment(session.history)
+            .task {
+                guard !didInitializePersistentSession else { return }
+                didInitializePersistentSession = true
+                await initialize()
             }
-        }
         #if os(macOS)
         .frame(minWidth: 900, minHeight: 600)
         #endif
@@ -38,11 +35,14 @@ public struct CezzuRoot: View {
             let sourceStore = RuleSourceStore(context: context)
             let store = RuleStoreCoordinator(sourceStore: sourceStore)
             let history = HistoryStore(context: context)
-            await store.bootstrap()
-            session = CezzuSession(store: store, history: history, container: container)
+            session = CezzuSession(
+                store: store,
+                history: history,
+                container: container,
+                shouldBootstrapAtLaunch: true
+            )
         } catch {
-            // 致命错误 —— 把空 session 留给 UI 兜底
-            session = CezzuSession.empty()
+            // 持久化容器初始化失败时保留 fallback session，避免启动黑屏。
         }
     }
 }
@@ -55,31 +55,41 @@ public final class CezzuSession {
     public let history: HistoryStore
     public let container: ModelContainer?
     public let bangumiAPI: BangumiAPIClientProtocol
+    public let shouldBootstrapAtLaunch: Bool
 
     public init(
         store: RuleStoreCoordinator,
         history: HistoryStore,
         container: ModelContainer?,
-        bangumiAPI: BangumiAPIClientProtocol = BangumiAPIClient.shared
+        bangumiAPI: BangumiAPIClientProtocol = BangumiAPIClient.shared,
+        shouldBootstrapAtLaunch: Bool = true
     ) {
         self.store = store
         self.history = history
         self.container = container
         self.bangumiAPI = bangumiAPI
+        self.shouldBootstrapAtLaunch = shouldBootstrapAtLaunch
     }
 
     public static func empty() -> CezzuSession {
         // 用一个 in-memory 的 fallback container 兜底，避免 Crash
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
-        let container = try? ModelContainer(
+        guard let container = try? ModelContainer(
             for: WatchHistoryEntry.self, RuleSourceRecord.self,
             configurations: config
-        )
-        let context = container?.mainContext ?? ModelContext(try! ModelContainer(for: WatchHistoryEntry.self))
+        ) else {
+            preconditionFailure("failed to create in-memory ModelContainer for CezzuSession.empty()")
+        }
+        let context = container.mainContext
         let sourceStore = RuleSourceStore(context: context)
         let store = RuleStoreCoordinator(sourceStore: sourceStore)
         let history = HistoryStore(context: context)
-        return CezzuSession(store: store, history: history, container: container)
+        return CezzuSession(
+            store: store,
+            history: history,
+            container: container,
+            shouldBootstrapAtLaunch: false
+        )
     }
 }
 
@@ -93,15 +103,21 @@ struct CezzuRootContent: View {
     #endif
 
     var body: some View {
-        #if os(iOS)
-            if sizeClass == .compact {
-                CompactRootView(session: session)
-            } else {
+        Group {
+            #if os(iOS)
+                if sizeClass == .compact {
+                    CompactRootView(session: session)
+                } else {
+                    SplitRootView(session: session)
+                }
+            #else
                 SplitRootView(session: session)
-            }
-        #else
-            SplitRootView(session: session)
-        #endif
+            #endif
+        }
+        .task(id: ObjectIdentifier(session.store)) {
+            guard session.shouldBootstrapAtLaunch else { return }
+            await session.store.bootstrap()
+        }
     }
 }
 

@@ -75,7 +75,7 @@ public final class DetailViewModel {
     public private(set) var tabErrors: [DetailTab: String] = [:]
     public let historyHint: HistoryResumeHint?
 
-    private let rules: [CezzuRule]
+    private var rules: [CezzuRule]
     private let api: BangumiAPIClientProtocol
     private let searchCoordinator: SourceSearchCoordinating
     private let engine: RuleEngine
@@ -104,6 +104,15 @@ public final class DetailViewModel {
         async let sources: Void = loadSourcesIfNeeded()
         async let tags: Void = loadTagsIfNeeded()
         _ = await (backdrop, sources, tags)
+    }
+
+    public func updateRules(_ newRules: [CezzuRule]) async {
+        guard rules.map(\.name) != newRules.map(\.name) else { return }
+        rules = newRules
+
+        if sources.isEmpty && !isSearchingSources {
+            await loadSourcesIfNeeded()
+        }
     }
 
     public func selectTab(_ tab: DetailTab) async {
@@ -568,6 +577,7 @@ public struct DetailView: View {
     @State private var model: DetailViewModel
     @State private var episodePage: Int = 0
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(RuleStoreCoordinator.self) private var ruleStore
     var onTapPlay: (PlaybackRequest, SourceSearchCache?) -> Void
     var onTapTag: (String) -> Void
 
@@ -613,6 +623,9 @@ public struct DetailView: View {
         .ignoresSafeArea(edges: .top)
         .task {
             await model.load()
+        }
+        .task(id: ruleStore.installedRules.count) {
+            await model.updateRules(ruleStore.enabledRules())
         }
     }
 

@@ -44,8 +44,15 @@ struct DetailViewModelTests {
             deadline: ContinuousClock.Instant
         ) -> AsyncStream<SearchCoordinator.Update> {
             AsyncStream { continuation in
+                let allowedRuleNames = Set(rules.map(\.name))
                 for keyword in keywords {
                     for update in updates[keyword] ?? [] {
+                        switch update {
+                        case .ruleStarted(let name), .ruleResults(let name, _):
+                            guard allowedRuleNames.contains(name) else { continue }
+                        default:
+                            break
+                        }
                         continuation.yield(update)
                     }
                 }
@@ -310,6 +317,69 @@ struct DetailViewModelTests {
         #expect(model.tags.count == 2)
         #expect(model.tags[0].name == "日常")
         #expect(model.tags[1].name == "校园")
+    }
+
+    @Test("updating rules after initial empty load retries source search")
+    func updateRulesRetriesSourceSearch() async throws {
+        let item = BangumiItem(
+            id: 4,
+            name: "Bocchi the Rock!",
+            nameCn: "孤独摇滚！",
+            summary: "",
+            airDate: "",
+            rank: 0,
+            ratingScore: 0,
+            images: .empty,
+            tags: []
+        )
+        let rule = Self.makeRule(name: "AGE")
+        let coordinator = FakeSourceSearchCoordinator(
+            updates: [
+                "孤独摇滚！": [
+                    .ruleStarted(name: "AGE"),
+                    .ruleResults(
+                        name: "AGE",
+                        results: [
+                            SearchResult(
+                                title: "孤独摇滚！",
+                                detailURL: URL(string: "https://age.example/bocchi")!,
+                                ruleName: "AGE"
+                            )
+                        ]
+                    ),
+                    .finished,
+                ]
+            ]
+        )
+        let engine = FakeRuleEngine(
+            episodesByRuleName: [
+                "AGE": [
+                    EpisodeRoad(
+                        index: 0,
+                        label: "线路 1",
+                        episodes: [
+                            Episode(title: "第 1 集", url: URL(string: "https://play.example/bocchi-1")!, index: 0)
+                        ]
+                    )
+                ]
+            ]
+        )
+        let model = DetailViewModel(
+            item: item,
+            rules: [],
+            searchCoordinator: coordinator,
+            engine: engine
+        )
+
+        await model.load()
+        #expect(model.sources.isEmpty)
+        #expect(model.sourceSearchFailed == "没有匹配到可播放源")
+
+        await model.updateRules([rule])
+
+        #expect(model.sources.count == 1)
+        #expect(model.selectedSource?.ruleName == "AGE")
+        #expect(model.currentEpisodes.count == 1)
     }
 
     private static func makeRule(name: String) -> CezzuRule {

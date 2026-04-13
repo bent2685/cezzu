@@ -52,7 +52,7 @@ public struct BangumiCard: View {
 
     @ViewBuilder
     private var cover: some View {
-        let url = URL(string: item.images.best)
+        let url = URL(string: item.images.listBest)
         let shape = RoundedRectangle(cornerRadius: BangumiCardLayout.coverCornerRadius, style: .continuous)
         Color.clear
         .frame(maxWidth: .infinity)
