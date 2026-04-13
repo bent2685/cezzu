@@ -27,8 +27,7 @@ public struct PlayerView: View {
     @State private var controlsVisible: Bool = true
     @State private var isSourcePanelPresented: Bool = false
     @State private var isDanmakuSettingsPresented: Bool = false
-    @State private var isScrubbing: Bool = false
-    @State private var scrubPosition: Double = 0
+    @State private var scrubbingState = PlayerScrubbingState()
     @State private var autoHideTask: Task<Void, Never>?
     @State private var temporaryBoostBaseRate: Float?
 
@@ -213,9 +212,7 @@ public struct PlayerView: View {
             }
         }
         .onChange(of: coordinator.backend.currentTime) { _, newTime in
-            if !isScrubbing {
-                scrubPosition = newTime
-            }
+            scrubbingState.syncPlaybackTime(newTime)
         }
         .onChange(of: activeRequest) { _, newRequest in
             prepareSourceSwitcherModel(for: newRequest)
@@ -288,14 +285,20 @@ public struct PlayerView: View {
 
                 Slider(
                     value: Binding(
-                        get: { displayedTime },
-                        set: { scrubPosition = $0 }
+                        get: { scrubbingState.position },
+                        set: { scrubbingState.update(position: $0) }
                     ),
                     in: 0...max(coordinator.backend.duration, 1),
                     onEditingChanged: handleScrubbingChanged
                 )
                 .tint(.white)
                 .contentShape(Rectangle())
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 0)
+                        .onEnded { _ in
+                            finishScrubbing()
+                        }
+                )
 
                 Text(formatTime(coordinator.backend.duration))
                     .font(.caption.monospacedDigit())
@@ -549,7 +552,7 @@ public struct PlayerView: View {
     }
 
     private var displayedTime: Double {
-        isScrubbing ? scrubPosition : coordinator.backend.currentTime
+        scrubbingState.position
     }
 
     private var interactionActions: PlayerInteractionActions {
@@ -578,15 +581,19 @@ public struct PlayerView: View {
     }
 
     private func handleScrubbingChanged(_ editing: Bool) {
-        isScrubbing = editing
         if editing {
+            scrubbingState.begin(at: coordinator.backend.currentTime)
             autoHideTask?.cancel()
             controlsVisible = true
-            scrubPosition = coordinator.backend.currentTime
         } else {
-            Task { await coordinator.seek(to: scrubPosition) }
-            revealControlsTemporarily()
+            finishScrubbing()
         }
+    }
+
+    private func finishScrubbing() {
+        guard let target = scrubbingState.finish() else { return }
+        Task { await coordinator.seek(to: target) }
+        revealControlsTemporarily()
     }
 
     private func seekRelative(_ delta: TimeInterval) {
@@ -627,12 +634,12 @@ public struct PlayerView: View {
     private func revealControlsTemporarily() {
         controlsVisible = true
         autoHideTask?.cancel()
-        guard coordinator.phase == .playing, !isLoadingVisible, !isScrubbing else { return }
+        guard coordinator.phase == .playing, !isLoadingVisible, !scrubbingState.isActive else { return }
         autoHideTask = Task {
             try? await Task.sleep(for: .seconds(3))
             guard !Task.isCancelled else { return }
             await MainActor.run {
-                if coordinator.phase == .playing && !isScrubbing {
+                if coordinator.phase == .playing && !scrubbingState.isActive {
                     withAnimation(.easeInOut(duration: 0.2)) {
                         controlsVisible = false
                     }
