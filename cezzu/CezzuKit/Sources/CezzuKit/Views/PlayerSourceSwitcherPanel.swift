@@ -248,11 +248,15 @@ struct PlayerSourceSwitcherPanel: View {
             bottomTrailingRadius: 0,
             topTrailingRadius: 0
         )) {
-            VStack(alignment: .leading, spacing: 18) {
-                header
-                sourcesSection
-                linesSection
-                episodesSection
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    header
+                    sourcesSection
+                    linesSection
+                    episodesSection
+                }
+                .padding(.vertical, 2)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
@@ -435,48 +439,44 @@ struct PlayerSourceSwitcherPanel: View {
                     }
                 }
 
-                ScrollView {
-                    LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: 92, maximum: 132), spacing: 10)],
-                        spacing: 10
-                    ) {
-                        ForEach(Array(episodes[pageStart..<pageEnd].enumerated()), id: \.element.id) { pageIndex, episode in
-                            let absoluteIndex = pageStart + pageIndex
-                            let request = model.playbackRequest(episodeIndex: absoluteIndex)
-                            let isCurrent =
-                                request?.rule.name == activeRequest.rule.name &&
-                                request?.roadIndex == activeRequest.roadIndex &&
-                                request?.episodeIndex == activeRequest.episodeIndex
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 92, maximum: 132), spacing: 10)],
+                    spacing: 10
+                ) {
+                    ForEach(Array(episodes[pageStart..<pageEnd].enumerated()), id: \.element.id) { pageIndex, episode in
+                        let absoluteIndex = pageStart + pageIndex
+                        let request = model.playbackRequest(episodeIndex: absoluteIndex)
+                        let isCurrent =
+                            request?.rule.name == activeRequest.rule.name &&
+                            request?.roadIndex == activeRequest.roadIndex &&
+                            request?.episodeIndex == activeRequest.episodeIndex
 
-                            Button {
-                                if let request {
-                                    onSelectRequest(request)
-                                }
-                            } label: {
-                                Text(episode.title)
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.white)
-                                    .multilineTextAlignment(.center)
-                                    .lineLimit(2)
-                                    .frame(maxWidth: .infinity, minHeight: 54)
-                                    .padding(.horizontal, 8)
-                                    .background(
-                                        isCurrent ? Color.white.opacity(0.22) : Color.white.opacity(0.08),
-                                        in: RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    )
-                                    .overlay {
-                                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                            .stroke(Color.white.opacity(isCurrent ? 0.28 : 0.10), lineWidth: 1)
-                                    }
+                        Button {
+                            if let request {
+                                onSelectRequest(request)
                             }
-                            .buttonStyle(.plain)
+                        } label: {
+                            Text(episode.title)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .multilineTextAlignment(.center)
+                                .lineLimit(2)
+                                .frame(maxWidth: .infinity, minHeight: 54)
+                                .padding(.horizontal, 8)
+                                .background(
+                                    isCurrent ? Color.white.opacity(0.22) : Color.white.opacity(0.08),
+                                    in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                )
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                        .stroke(Color.white.opacity(isCurrent ? 0.28 : 0.10), lineWidth: 1)
+                                }
                         }
+                        .buttonStyle(.plain)
                     }
-                    .padding(.vertical, 2)
                 }
             }
         }
-        .frame(maxHeight: .infinity, alignment: .top)
         .onChange(of: model.selectedRoadIndex) { _, _ in episodePage = 0 }
         .onChange(of: model.selectedSourceID) { _, _ in episodePage = 0 }
     }

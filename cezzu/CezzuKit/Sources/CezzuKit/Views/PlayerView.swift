@@ -30,6 +30,7 @@ public struct PlayerView: View {
     @State private var scrubbingState = PlayerScrubbingState()
     @State private var autoHideTask: Task<Void, Never>?
     @State private var temporaryBoostBaseRate: Float?
+    @State private var temporaryBoostRate: Float?
 
     public init(
         request: PlaybackRequest,
@@ -73,6 +74,12 @@ public struct PlayerView: View {
             if isLoadingVisible {
                 loadingOverlay
                     .transition(.opacity)
+            }
+
+            if controlsVisible && !isSourcePanelPresented && !isLoadingVisible {
+                centerPlaybackControls
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                    .transition(.scale(scale: 0.92).combined(with: .opacity))
             }
 
             if controlsVisible {
@@ -279,7 +286,7 @@ public struct PlayerView: View {
     private var controls: some View {
         VStack(spacing: 14) {
             HStack(spacing: 12) {
-                Text(formatTime(displayedTime))
+                Text(formatTime(scrubbingState.position))
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.white.opacity(0.92))
 
@@ -310,8 +317,54 @@ public struct PlayerView: View {
                 compactControlsRow
             }
         }
+        .overlay(alignment: .center) {
+            if let temporaryBoostRate {
+                Text(boostRateText(temporaryBoostRate))
+                    .font(.headline.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .glassBackground(in: Capsule(), tint: Color.white.opacity(0.08))
+                    .allowsHitTesting(false)
+            }
+        }
         .frame(maxWidth: .infinity)
         .shadow(color: .black.opacity(0.35), radius: 10, y: 2)
+    }
+
+    @ViewBuilder
+    private var centerPlaybackControls: some View {
+        GlassContainer {
+            HStack(spacing: 18) {
+                GlassPlaybackControlButton(
+                    systemImage: "gobackward.10",
+                    accessibilityLabel: "快退 10 秒"
+                ) {
+                    seekRelative(-10)
+                }
+
+                GlassPlaybackControlButton(
+                    systemImage: coordinator.phase == .playing ? "pause.fill" : "play.fill",
+                    accessibilityLabel: coordinator.phase == .playing ? "暂停" : "播放",
+                    prominence: .primary
+                ) {
+                    if coordinator.phase == .playing {
+                        coordinator.pause()
+                    } else {
+                        coordinator.resume()
+                    }
+                    revealControlsTemporarily()
+                }
+
+                GlassPlaybackControlButton(
+                    systemImage: "goforward.10",
+                    accessibilityLabel: "快进 10 秒"
+                ) {
+                    seekRelative(10)
+                }
+            }
+            .padding(.horizontal, 24)
+        }
     }
 
     private var bottomControlsGradient: some View {
@@ -364,24 +417,6 @@ public struct PlayerView: View {
                 ) {
                     playNeighborEpisode(step: -1)
                 }
-                iconControlButton(systemImage: "gobackward.10") {
-                    seekRelative(-10)
-                }
-                iconControlButton(
-                    systemImage: coordinator.phase == .playing ? "pause.fill" : "play.fill",
-                    size: 42,
-                    font: .title2
-                ) {
-                    if coordinator.phase == .playing {
-                        coordinator.pause()
-                    } else {
-                        coordinator.resume()
-                    }
-                    revealControlsTemporarily()
-                }
-                iconControlButton(systemImage: "goforward.10") {
-                    seekRelative(10)
-                }
                 iconControlButton(
                     systemImage: "forward.end.fill",
                     isEnabled: activeRequest.hasNextEpisode
@@ -424,24 +459,6 @@ public struct PlayerView: View {
                 isEnabled: activeRequest.hasPreviousEpisode
             ) {
                 playNeighborEpisode(step: -1)
-            }
-            iconControlButton(systemImage: "gobackward.10") {
-                seekRelative(-10)
-            }
-            iconControlButton(
-                systemImage: coordinator.phase == .playing ? "pause.fill" : "play.fill",
-                size: 40,
-                font: .title3
-            ) {
-                if coordinator.phase == .playing {
-                    coordinator.pause()
-                } else {
-                    coordinator.resume()
-                }
-                revealControlsTemporarily()
-            }
-            iconControlButton(systemImage: "goforward.10") {
-                seekRelative(10)
             }
             iconControlButton(
                 systemImage: "forward.end.fill",
@@ -551,10 +568,6 @@ public struct PlayerView: View {
         .contentShape(Circle())
     }
 
-    private var displayedTime: Double {
-        scrubbingState.position
-    }
-
     private var interactionActions: PlayerInteractionActions {
         PlayerInteractionActions(
             toggleControls: {
@@ -573,6 +586,9 @@ public struct PlayerView: View {
             },
             beginTemporaryBoost: {
                 beginTemporaryBoost()
+            },
+            updateTemporaryBoost: { rate in
+                updateTemporaryBoost(rate: rate)
             },
             endTemporaryBoost: {
                 endTemporaryBoost()
@@ -605,13 +621,23 @@ public struct PlayerView: View {
     private func beginTemporaryBoost() {
         guard temporaryBoostBaseRate == nil, coordinator.phase == .playing else { return }
         temporaryBoostBaseRate = max(coordinator.backend.rate, 1.0)
-        coordinator.setRate(3.0)
+        let rate = PlayerTemporaryBoostRate.defaultRate
+        temporaryBoostRate = rate
+        coordinator.setRate(rate)
+        revealControlsTemporarily()
+    }
+
+    private func updateTemporaryBoost(rate: Float) {
+        guard temporaryBoostBaseRate != nil else { return }
+        temporaryBoostRate = rate
+        coordinator.setRate(rate)
         revealControlsTemporarily()
     }
 
     private func endTemporaryBoost() {
         guard let baseRate = temporaryBoostBaseRate else { return }
         temporaryBoostBaseRate = nil
+        temporaryBoostRate = nil
         coordinator.setRate(baseRate)
         revealControlsTemporarily()
     }
@@ -740,6 +766,10 @@ public struct PlayerView: View {
     private func formatMillis(_ ms: Int) -> String {
         formatTime(TimeInterval(ms) / 1000.0)
     }
+
+    private func boostRateText(_ rate: Float) -> String {
+        String(format: "%.1fX", rate)
+    }
 }
 
 // MARK: - chrome controller environment
@@ -838,6 +868,7 @@ public struct PlayerInteractionActions: Sendable {
     public let togglePlayPause: @MainActor @Sendable () -> Void
     public let seekRelative: @MainActor @Sendable (TimeInterval) -> Void
     public let beginTemporaryBoost: @MainActor @Sendable () -> Void
+    public let updateTemporaryBoost: @MainActor @Sendable (Float) -> Void
     public let endTemporaryBoost: @MainActor @Sendable () -> Void
 
     public init(
@@ -845,12 +876,14 @@ public struct PlayerInteractionActions: Sendable {
         togglePlayPause: @escaping @MainActor @Sendable () -> Void = {},
         seekRelative: @escaping @MainActor @Sendable (TimeInterval) -> Void = { _ in },
         beginTemporaryBoost: @escaping @MainActor @Sendable () -> Void = {},
+        updateTemporaryBoost: @escaping @MainActor @Sendable (Float) -> Void = { _ in },
         endTemporaryBoost: @escaping @MainActor @Sendable () -> Void = {}
     ) {
         self.toggleControls = toggleControls
         self.togglePlayPause = togglePlayPause
         self.seekRelative = seekRelative
         self.beginTemporaryBoost = beginTemporaryBoost
+        self.updateTemporaryBoost = updateTemporaryBoost
         self.endTemporaryBoost = endTemporaryBoost
     }
 }

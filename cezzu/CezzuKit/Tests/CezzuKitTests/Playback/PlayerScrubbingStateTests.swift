@@ -34,4 +34,20 @@ struct PlayerScrubbingStateTests {
         #expect(state.isActive == false)
         #expect(state.position == 57)
     }
+
+    @Test("finished scrub holds target position until playback catches up")
+    func finishHoldsTargetUntilPlaybackCatchesUp() {
+        var state = PlayerScrubbingState()
+
+        state.begin(at: 24)
+        state.update(position: 57)
+        let target = state.finish()
+
+        state.syncPlaybackTime(25)
+        #expect(target == 57)
+        #expect(state.position == 57)
+
+        state.syncPlaybackTime(56.8)
+        #expect(state.position == 56.8)
+    }
 }

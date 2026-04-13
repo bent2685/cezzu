@@ -3,9 +3,14 @@ import Foundation
 struct PlayerScrubbingState {
     private(set) var isActive = false
     private(set) var position: TimeInterval = 0
+    private var pendingSeekPosition: TimeInterval?
 
     mutating func syncPlaybackTime(_ time: TimeInterval) {
         guard !isActive else { return }
+        if let pendingSeekPosition {
+            guard abs(time - pendingSeekPosition) <= 0.35 else { return }
+            self.pendingSeekPosition = nil
+        }
         position = time
     }
 
@@ -22,6 +27,7 @@ struct PlayerScrubbingState {
     mutating func finish() -> TimeInterval? {
         guard isActive else { return nil }
         isActive = false
+        pendingSeekPosition = position
         return position
     }
 }
