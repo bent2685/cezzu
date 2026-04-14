@@ -29,9 +29,9 @@ A native app for watching online anime on iPhone / iPad / Mac. No login, no subs
 - **Anime search & detail pages**: powered by Bangumi — covers, ratings, popularity, synopsis, tags, episode count and air date.
 - **Follow list**: bookmark what you care about, collected in a dedicated tab.
 - **Watch history & resume**: remembers the exact episode and timestamp you left on; reopen and you're right back there.
-- **Multi-source switching**: each show carries several video sources — switch on the fly when one stalls, without losing progress.
+- **Multi-source switching**: multiple upstream video sources are wired in.
 - **Danmaku (bullet comments)**: auto-fetched and rendered in sync; font size, opacity, vertical coverage, lifetime and line height are all tunable; scroll / top-pinned / bottom-pinned layers can be toggled independently; optionally tracks playback rate.
-- **Playback**: 0.5× – 2× rate, long-press temporary boost, Picture-in-Picture, background audio, automatic landscape on iPhone.
+- **Playback**: variable speed, long-press temporary boost, Picture-in-Picture, background audio, AirPlay-style cross-device audio.
 - **Built-in rule sources**: ships with a curated set of site rules out of the box; extra sources can be subscribed or imported.
 
 ### Dedicated iOS / macOS polish
