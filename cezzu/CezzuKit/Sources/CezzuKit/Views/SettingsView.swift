@@ -2,6 +2,7 @@ import SwiftUI
 
 /// 设置屏：v1 只有"本地代理开关"。
 public struct SettingsView: View {
+    @Environment(RuleStoreCoordinator.self) private var ruleStore
     private let repositoryURL = URL(string: "https://github.com/bent2685/cezzu")!
     private let kazumiAcknowledgement = try! AttributedString(
         markdown:
@@ -34,6 +35,14 @@ public struct SettingsView: View {
                     .navigationTitle("弹幕设置")
                 } label: {
                     Text("弹幕设置")
+                }
+            }
+
+            Section("数据源") {
+                NavigationLink {
+                    RuleManagerView(store: ruleStore)
+                } label: {
+                    Label("规则", systemImage: "list.bullet.rectangle")
                 }
             }
 

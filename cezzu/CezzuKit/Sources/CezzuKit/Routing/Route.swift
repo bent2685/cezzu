@@ -52,6 +52,7 @@ public struct HistoryResumeHint: Hashable, Sendable {
 /// 整个 App 用的 deep-link `Route` 枚举。
 public enum Route: Hashable, Sendable {
     case home
+    case follow
     case search
     case detail(BangumiItem)
     case historyDetail(HistoryResumeHint)

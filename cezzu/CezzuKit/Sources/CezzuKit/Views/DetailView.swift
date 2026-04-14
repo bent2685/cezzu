@@ -587,6 +587,7 @@ public struct DetailView: View {
     @State private var episodePage: Int = 0
     @Environment(\.colorScheme) private var colorScheme
     @Environment(RuleStoreCoordinator.self) private var ruleStore
+    @Environment(FollowStore.self) private var followStore
     var onTapPlay: (PlaybackRequest, SourceSearchCache?) -> Void
     var onTapTag: (String) -> Void
 
@@ -865,27 +866,52 @@ public struct DetailView: View {
     @ViewBuilder
     private var heroActionBar: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Button {
-                if let request = model.playbackRequestForResume() ?? model.playbackRequestForFirstEpisode() {
-                    onTapPlay(request, model.sourceCache)
+            HStack(spacing: 12) {
+                Button {
+                    if let request = model.playbackRequestForResume() ?? model.playbackRequestForFirstEpisode() {
+                        onTapPlay(request, model.sourceCache)
+                    }
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: model.playbackRequestForResume() == nil ? "play.fill" : "arrow.clockwise")
+                        Text(primaryActionTitle)
+                            .fontWeight(.bold)
+                    }
+                    .foregroundStyle(.white)
+                    .frame(minWidth: 160, minHeight: 48)
+                    .padding(.horizontal, 18)
+                    .background(
+                        DetailStyle.netflixRed,
+                        in: RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
+                    )
                 }
-            } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: model.playbackRequestForResume() == nil ? "play.fill" : "arrow.clockwise")
-                    Text(primaryActionTitle)
-                        .fontWeight(.bold)
+                .buttonStyle(.plain)
+                .disabled(model.playbackRequestForResume() == nil && model.playbackRequestForFirstEpisode() == nil)
+                .opacity(model.playbackRequestForResume() == nil && model.playbackRequestForFirstEpisode() == nil ? 0.45 : 1)
+
+                Button {
+                    try? followStore.toggle(model.item)
+                } label: {
+                    HStack(spacing: 8) {
+                        ZStack {
+                            Image(systemName: "star")
+                                .opacity(isFollowed ? 0 : 1)
+                                .scaleEffect(isFollowed ? 0.72 : 1)
+                            Image(systemName: "star.fill")
+                                .opacity(isFollowed ? 1 : 0)
+                                .scaleEffect(isFollowed ? 1 : 0.72)
+                        }
+                        .foregroundStyle(isFollowed ? .yellow : palette.textPrimary)
+                        .frame(width: 18, height: 18)
+                        Text("追番")
+                            .fontWeight(.semibold)
+                            .foregroundStyle(isFollowed ? .yellow : palette.textPrimary)
+                    }
+                    .frame(minHeight: 48)
+                    .animation(.easeOut(duration: 0.16), value: isFollowed)
                 }
-                .foregroundStyle(.white)
-                .frame(minWidth: 160, minHeight: 48)
-                .padding(.horizontal, 18)
-                .background(
-                    DetailStyle.netflixRed,
-                    in: RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
-                )
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
-            .disabled(model.playbackRequestForResume() == nil && model.playbackRequestForFirstEpisode() == nil)
-            .opacity(model.playbackRequestForResume() == nil && model.playbackRequestForFirstEpisode() == nil ? 0.45 : 1)
 
             if let resumeDetailText {
                 Text(resumeDetailText)
@@ -961,6 +987,10 @@ public struct DetailView: View {
             return nil
         }
         return "\(historyHint.episodeTitle) \(formatMillis(historyHint.positionMs))"
+    }
+
+    private var isFollowed: Bool {
+        followStore.contains(model.item)
     }
 
     @ViewBuilder

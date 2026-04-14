@@ -15,6 +15,7 @@ public struct CezzuRoot: View {
         CezzuRootContent(session: session)
             .environment(session.store)
             .environment(session.history)
+            .environment(session.followStore)
             .task {
                 guard !didInitializePersistentSession else { return }
                 didInitializePersistentSession = true
@@ -29,15 +30,17 @@ public struct CezzuRoot: View {
     private func initialize() async {
         do {
             let container = try ModelContainer(
-                for: WatchHistoryEntry.self, RuleSourceRecord.self
+                for: WatchHistoryEntry.self, FollowEntry.self, RuleSourceRecord.self
             )
             let context = container.mainContext
             let sourceStore = RuleSourceStore(context: context)
             let store = RuleStoreCoordinator(sourceStore: sourceStore)
             let history = HistoryStore(context: context)
+            let followStore = FollowStore(context: context)
             session = CezzuSession(
                 store: store,
                 history: history,
+                followStore: followStore,
                 container: container,
                 shouldBootstrapAtLaunch: true
             )
@@ -53,6 +56,7 @@ public struct CezzuRoot: View {
 public final class CezzuSession {
     public let store: RuleStoreCoordinator
     public let history: HistoryStore
+    public let followStore: FollowStore
     public let container: ModelContainer?
     public let bangumiAPI: BangumiAPIClientProtocol
     public let shouldBootstrapAtLaunch: Bool
@@ -60,12 +64,14 @@ public final class CezzuSession {
     public init(
         store: RuleStoreCoordinator,
         history: HistoryStore,
+        followStore: FollowStore,
         container: ModelContainer?,
         bangumiAPI: BangumiAPIClientProtocol = BangumiAPIClient.shared,
         shouldBootstrapAtLaunch: Bool = true
     ) {
         self.store = store
         self.history = history
+        self.followStore = followStore
         self.container = container
         self.bangumiAPI = bangumiAPI
         self.shouldBootstrapAtLaunch = shouldBootstrapAtLaunch
@@ -75,7 +81,7 @@ public final class CezzuSession {
         // 用一个 in-memory 的 fallback container 兜底，避免 Crash
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
         guard let container = try? ModelContainer(
-            for: WatchHistoryEntry.self, RuleSourceRecord.self,
+            for: WatchHistoryEntry.self, FollowEntry.self, RuleSourceRecord.self,
             configurations: config
         ) else {
             preconditionFailure("failed to create in-memory ModelContainer for CezzuSession.empty()")
@@ -84,9 +90,11 @@ public final class CezzuSession {
         let sourceStore = RuleSourceStore(context: context)
         let store = RuleStoreCoordinator(sourceStore: sourceStore)
         let history = HistoryStore(context: context)
+        let followStore = FollowStore(context: context)
         return CezzuSession(
             store: store,
             history: history,
+            followStore: followStore,
             container: container,
             shouldBootstrapAtLaunch: false
         )
@@ -163,6 +171,16 @@ struct CompactRootView: View {
                 .tabItem { Label("主页", systemImage: "house") }
 
                 NavigationStack(path: $path) {
+                    FollowView(followStore: session.followStore) { item in
+                        path.append(Route.detail(item))
+                    }
+                    .navigationDestination(for: Route.self) { route in
+                        routeView(route)
+                    }
+                }
+                .tabItem { Label("追番", systemImage: "star") }
+
+                NavigationStack(path: $path) {
                     HistoryView(history: session.history) { entry in
                         path.append(Route.historyDetail(historyHint(from: entry)))
                     }
@@ -171,11 +189,6 @@ struct CompactRootView: View {
                     }
                 }
                 .tabItem { Label("最近观看", systemImage: "clock") }
-
-                NavigationStack {
-                    RuleManagerView(store: session.store)
-                }
-                .tabItem { Label("规则", systemImage: "list.bullet.rectangle") }
 
                 NavigationStack {
                     SettingsView()
@@ -281,6 +294,10 @@ struct CompactRootView: View {
             HistoryView(history: session.history) { entry in
                 path.append(Route.historyDetail(historyHint(from: entry)))
             }
+        case .follow:
+            FollowView(followStore: session.followStore) { item in
+                path.append(Route.detail(item))
+            }
         }
     }
 
@@ -336,21 +353,21 @@ struct SplitRootView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     enum SidebarItem: Hashable, Identifiable {
-        case home, history, rules, settings
+        case home, follow, history, settings
         var id: SidebarItem { self }
         var label: String {
             switch self {
             case .home: return "主页"
+            case .follow: return "追番"
             case .history: return "最近观看"
-            case .rules: return "规则"
             case .settings: return "设置"
             }
         }
         var systemImage: String {
             switch self {
             case .home: return "house"
+            case .follow: return "star"
             case .history: return "clock"
-            case .rules: return "list.bullet.rectangle"
             case .settings: return "gearshape"
             }
         }
@@ -377,7 +394,7 @@ struct SplitRootView: View {
     private var sidebar: some View {
         List(selection: $sidebarItem) {
             ForEach(
-                [SidebarItem.home, .history, .rules, .settings]
+                [SidebarItem.home, .follow, .history, .settings]
             ) { item in
                 Label(item.label, systemImage: item.systemImage)
                     .tag(item)
@@ -476,12 +493,14 @@ struct SplitRootView: View {
                 onTapItem: { item in path.append(Route.detail(item)) },
                 onTapSearch: { path.append(Route.search) }
             )
+        case .follow:
+            FollowView(followStore: session.followStore) { item in
+                path.append(Route.detail(item))
+            }
         case .history:
             HistoryView(history: session.history) { entry in
                 path.append(Route.historyDetail(historyHint(from: entry)))
             }
-        case .rules:
-            RuleManagerView(store: session.store)
         case .settings:
             SettingsView()
         }
