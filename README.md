@@ -14,7 +14,7 @@
 > 一个原生 iOS / macOS 的**第三方视频播放器** —— 受开源项目 [Kazumi](https://github.com/Predidit/Kazumi) 的实现路线启发，以 Swift + SwiftUI + Liquid Glass 在 Apple 原生技术栈上独立实现，并沿用其开源规则协议；规则内容由独立维护的 sibling 仓库 [`cezzu-rule`](./cezzu-rule/) 提供，应用本身不包含任何内容。
 
 > [!CAUTION]
-> 本项目仅供学习，请支持正版资源！！！
+> 本项目是纯开源、非盈利的学习与交流项目——代码完全公开，不提供任何付费功能，也不接受打赏或商业授权。仅供学习，请支持正版资源！！！
 
 Cezzu 是一个**单仓库多项目**（monorepo），当前包含两个 sibling 子项目：
 

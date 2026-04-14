@@ -14,7 +14,7 @@
 > A native iOS / macOS **third-party video player** — inspired by the design direction of the open-source project [Kazumi](https://github.com/Predidit/Kazumi) and independently implemented on top of Apple's native stack (Swift + SwiftUI + Liquid Glass), while reusing its open-source rule protocol. Rule content itself is maintained separately in the sibling [`cezzu-rule`](./cezzu-rule/) repository; the app ships no content of its own.
 
 > [!CAUTION]
-> This project is for study only — please support official / licensed sources.
+> This is a fully open-source, non-profit learning project — the code is entirely public, there are no paid features, and no donations or commercial licensing are offered. For study purposes only — please support official, licensed content.
 
 Cezzu is a **monorepo** with two sibling sub-projects:
 
