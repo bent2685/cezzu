@@ -5,15 +5,12 @@ import SwiftUI
 ///
 /// 内部走 `glassBackground(in:)` 兼容层：iOS 26 / macOS 26 启用真正的 Liquid
 /// Glass，更老平台回落到 `Material`。
-public struct GlassPanel<Content: View>: View {
+public struct GlassPanel<PanelShape: Shape, Content: View>: View {
     private let content: Content
-    private let shape: AnyShape
+    private let shape: PanelShape
 
-    public init(
-        shape: some Shape = RoundedRectangle(cornerRadius: 24, style: .continuous),
-        @ViewBuilder content: () -> Content
-    ) {
-        self.shape = AnyShape(shape)
+    public init(shape: PanelShape, @ViewBuilder content: () -> Content) {
+        self.shape = shape
         self.content = content()
     }
 
@@ -21,6 +18,12 @@ public struct GlassPanel<Content: View>: View {
         content
             .padding(20)
             .glassBackground(in: shape)
+    }
+}
+
+extension GlassPanel where PanelShape == RoundedRectangle {
+    public init(@ViewBuilder content: () -> Content) {
+        self.init(shape: RoundedRectangle(cornerRadius: 24, style: .continuous), content: content)
     }
 }
 

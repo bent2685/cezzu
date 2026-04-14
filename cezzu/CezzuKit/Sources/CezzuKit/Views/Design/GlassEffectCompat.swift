@@ -16,20 +16,23 @@ extension View {
     /// - Parameters:
     ///   - shape: 玻璃区域的形状（`Capsule()` / `RoundedRectangle(...)` / 任意 Shape）
     ///   - tint: 可选染色，用于"选中态"高亮。`nil` = 纯玻璃。
-    @ViewBuilder
     public func glassBackground<S: Shape>(
         in shape: S,
         tint: Color? = nil
-    ) -> some View {
+    ) -> AnyView {
+        #if targetEnvironment(simulator)
+            return AnyView(self.background(MaterialFallback(shape: shape, tint: tint)))
+        #else
         if #available(iOS 26.0, macOS 26.0, *) {
             if let tint {
-                self.glassEffect(.regular.tint(tint), in: shape)
+                return AnyView(self.glassEffect(.regular.tint(tint), in: shape))
             } else {
-                self.glassEffect(.regular, in: shape)
+                return AnyView(self.glassEffect(.regular, in: shape))
             }
         } else {
-            self.background(MaterialFallback(shape: shape, tint: tint))
+            return AnyView(self.background(MaterialFallback(shape: shape, tint: tint)))
         }
+        #endif
     }
 }
 
