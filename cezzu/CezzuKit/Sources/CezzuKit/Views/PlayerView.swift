@@ -4,6 +4,8 @@ import SwiftUI
 
 /// 播放屏：`AVPlayerLayer` 内嵌 + 自定义悬浮控制层 + 沉浸模式。
 public struct PlayerView: View {
+    @AppStorage(PlaybackSettings.enableDanmakuKey) private var enableDanmaku: Bool =
+        PlaybackSettings.enableDanmakuDefault
     @State private var coordinator: PlaybackCoordinator
     @State private var activeRequest: PlaybackRequest
     @State private var danmakuController = PlayerDanmakuController()
@@ -63,7 +65,7 @@ public struct PlayerView: View {
             interaction.overlay(actions: interactionActions)
                 .ignoresSafeArea()
 
-            if PlaybackSettings.enableDanmaku {
+            if enableDanmaku {
                 PlayerDanmakuOverlay(
                     controller: danmakuController,
                     currentTime: coordinator.backend.currentTime,
@@ -231,6 +233,11 @@ public struct PlayerView: View {
             prepareSourceSwitcherModel(for: newRequest)
             Task {
                 await danmakuController.prepare(for: newRequest)
+            }
+        }
+        .onChange(of: enableDanmaku) { _, isEnabled in
+            Task {
+                await danmakuController.prepare(for: activeRequest, forceReload: isEnabled)
             }
         }
         .onChange(of: scenePhase) { _, newPhase in

@@ -4,7 +4,7 @@ import SwiftUI
 @MainActor
 @Observable
 final class PlayerDanmakuController {
-    private let provider: DanmakuProvider
+    private let provider: any DanmakuProviderProtocol
 
     private(set) var comments: [DanmakuComment] = []
     private(set) var activeComments: [ActiveDanmakuComment] = []
@@ -18,14 +18,13 @@ final class PlayerDanmakuController {
     private var nextBottomTrack: Int = 0
     private var lastObservedTime: Double = 0
 
-    init(provider: DanmakuProvider = DanmakuProvider()) {
+    init(provider: any DanmakuProviderProtocol = DanmakuProvider()) {
         self.provider = provider
     }
 
-    func prepare(for request: PlaybackRequest) async {
-        if loadedRequestID == request { return }
+    func prepare(for request: PlaybackRequest, forceReload: Bool = false) async {
+        if !forceReload, loadedRequestID == request { return }
 
-        loadedRequestID = request
         comments = []
         activeComments = []
         nextCommentIndex = 0
@@ -38,15 +37,21 @@ final class PlayerDanmakuController {
             "prepare: anime=\(request.anime.title) episodeTitle=\(request.episode.title) episodeIndex=\(request.episode.index) bangumiID=\(request.item?.id ?? -1)"
         )
 
-        guard PlaybackSettings.enableDanmaku else { return }
+        guard PlaybackSettings.enableDanmaku else {
+            loadedRequestID = nil
+            debugLog("prepare skipped: danmaku disabled")
+            return
+        }
 
         isLoading = true
         defer { isLoading = false }
 
         do {
             comments = try await provider.fetchDanmaku(for: request)
+            loadedRequestID = request
             debugLog("prepare success: loaded \(comments.count) comments")
         } catch {
+            loadedRequestID = nil
             loadError = "\(error)"
             comments = []
             debugLog("prepare failed: \(error)")
