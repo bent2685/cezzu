@@ -20,6 +20,7 @@ public struct PlayerView: View {
     @Environment(\.playerPictureInPictureController) private var pictureInPicture
     @Environment(\.playerSystemPlaybackController) private var systemPlayback
     @Environment(\.playerInteractionController) private var interaction
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dismiss) private var dismiss
 
     @State private var showResumePrompt: Bool = false
@@ -226,6 +227,10 @@ public struct PlayerView: View {
             Task {
                 await danmakuController.prepare(for: newRequest)
             }
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase == .active else { return }
+            presentation.requestLandscapePlayback()
         }
         .onDisappear {
             autoHideTask?.cancel()
