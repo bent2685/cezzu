@@ -14,6 +14,8 @@ settings:
     SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: complete
     ENABLE_USER_SCRIPT_SANDBOXING: NO  # 让 sync_seed_rules.sh 能读 ../cezzu-rule/
+    DANDANPLAY_APP_ID: ""
+    DANDANPLAY_APP_SECRET: ""
 
 # SwiftPM 包依赖：本地 CezzuKit
 packages:
@@ -31,8 +33,8 @@ targets:
     platform: iOS
     deploymentTarget: "17.0"
     configFiles:
-      Debug: Version-iOS.xcconfig
-      Release: Version-iOS.xcconfig
+      Debug: Base-iOS.xcconfig
+      Release: Base-iOS.xcconfig
     sources:
       - path: Cezzu-iOS/Sources
     info:
@@ -59,6 +61,8 @@ targets:
             127.0.0.1:
               NSExceptionAllowsInsecureHTTPLoads: true
               NSIncludesSubdomains: true
+        DanDanPlayAppID: "$(DANDANPLAY_APP_ID)"
+        DanDanPlayAppSecret: "$(DANDANPLAY_APP_SECRET)"
     settings:
       base:
         PRODUCT_NAME: Cezzu
@@ -85,8 +89,8 @@ targets:
     platform: macOS
     deploymentTarget: "14.0"
     configFiles:
-      Debug: Version-macOS.xcconfig
-      Release: Version-macOS.xcconfig
+      Debug: Base-macOS.xcconfig
+      Release: Base-macOS.xcconfig
     sources:
       - path: Cezzu-macOS/Sources
     info:
@@ -103,6 +107,8 @@ targets:
             127.0.0.1:
               NSExceptionAllowsInsecureHTTPLoads: true
               NSIncludesSubdomains: true
+        DanDanPlayAppID: "$(DANDANPLAY_APP_ID)"
+        DanDanPlayAppSecret: "$(DANDANPLAY_APP_SECRET)"
     settings:
       base:
         PRODUCT_NAME: Cezzu

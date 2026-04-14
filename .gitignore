@@ -53,3 +53,6 @@ tmp/
 # ─── Release 构建 ───
 dist/
 .build-release/
+
+# ─── 本地密钥 / 凭据 ───
+cezzu/LocalSecrets.xcconfig

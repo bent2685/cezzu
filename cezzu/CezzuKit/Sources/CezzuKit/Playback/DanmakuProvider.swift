@@ -2,6 +2,36 @@ import CryptoKit
 import Foundation
 import SwiftUI
 
+protocol DanmakuProviderProtocol: Sendable {
+    func fetchDanmaku(for request: PlaybackRequest) async throws -> [DanmakuComment]
+}
+
+struct DanDanPlayCredentials: Sendable {
+    let appID: String
+    let appSecret: String
+
+    init?(bundle: Bundle = .main, environment: [String: String] = ProcessInfo.processInfo.environment) {
+        let infoAppID = (bundle.object(forInfoDictionaryKey: "DanDanPlayAppID") as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let infoAppSecret = (bundle.object(forInfoDictionaryKey: "DanDanPlayAppSecret") as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let envAppID = environment["DANDANPLAY_APP_ID"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let envAppSecret = environment["DANDANPLAY_APP_SECRET"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        let resolvedAppID = !infoAppID.isEmpty ? infoAppID : envAppID
+        let resolvedAppSecret = !infoAppSecret.isEmpty ? infoAppSecret : envAppSecret
+
+        guard !resolvedAppID.isEmpty, !resolvedAppSecret.isEmpty else {
+            return nil
+        }
+
+        self.appID = resolvedAppID
+        self.appSecret = resolvedAppSecret
+    }
+}
+
 struct DanmakuComment: Hashable, Sendable {
     let text: String
     let time: Double
@@ -78,15 +108,14 @@ private struct DanmakuCommentPayload: Decodable {
     let p: String
 }
 
-actor DanmakuProvider {
-    private static let appID = "kvpx7qkqjh"
-    private static let appSecret = "rABUaBLqdz7aCSi3fe88ZDj2gwga9Vax"
-
+actor DanmakuProvider: DanmakuProviderProtocol {
     private let session: URLSession
     private let decoder = JSONDecoder()
+    private let credentials: DanDanPlayCredentials?
 
-    init(session: URLSession = .shared) {
+    init(session: URLSession = .shared, credentials: DanDanPlayCredentials? = DanDanPlayCredentials()) {
         self.session = session
+        self.credentials = credentials
     }
 
     func fetchDanmaku(for request: PlaybackRequest) async throws -> [DanmakuComment] {
@@ -191,22 +220,29 @@ actor DanmakuProvider {
     }
 
     private func perform(url: URL) async throws -> (Data, URLResponse) {
+        guard let credentials else {
+            debugLog("missing credentials: set DanDanPlayAppID / DanDanPlayAppSecret in local config")
+            throw URLError(.userAuthenticationRequired)
+        }
         let timestamp = Int(Date().timeIntervalSince1970)
         var request = URLRequest(url: url)
         request.setValue(RandomUA.next(), forHTTPHeaderField: "User-Agent")
         request.setValue("", forHTTPHeaderField: "Referer")
         request.setValue("1", forHTTPHeaderField: "X-Auth")
-        request.setValue(Self.appID, forHTTPHeaderField: "X-AppId")
+        request.setValue(credentials.appID, forHTTPHeaderField: "X-AppId")
         request.setValue(String(timestamp), forHTTPHeaderField: "X-Timestamp")
-        request.setValue(signature(path: url.path, timestamp: timestamp), forHTTPHeaderField: "X-Signature")
+        request.setValue(
+            signature(path: url.path, timestamp: timestamp, credentials: credentials),
+            forHTTPHeaderField: "X-Signature"
+        )
         debugLog(
-            "request headers: X-AppId=\(Self.appID) X-Timestamp=\(timestamp) path=\(url.path)"
+            "request headers: X-AppId=\(credentials.appID) X-Timestamp=\(timestamp) path=\(url.path)"
         )
         return try await session.data(for: request)
     }
 
-    private func signature(path: String, timestamp: Int) -> String {
-        let raw = Self.appID + String(timestamp) + path + Self.appSecret
+    private func signature(path: String, timestamp: Int, credentials: DanDanPlayCredentials) -> String {
+        let raw = credentials.appID + String(timestamp) + path + credentials.appSecret
         let digest = SHA256.hash(data: Data(raw.utf8))
         return Data(digest).base64EncodedString()
     }
