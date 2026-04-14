@@ -25,7 +25,7 @@ Cezzu 是一个**单仓库多项目**（monorepo），当前包含两个 sibling
 ### iOS 预览
 
 <p align="center">
-  <img src="docs/preview/ios-preview.jpg" width="360" alt="Cezzu iOS Preview">
+  <img src="docs/preview/ios-preview.jpg" width="560" alt="Cezzu iOS Preview">
 </p>
 
 ### macOS 预览

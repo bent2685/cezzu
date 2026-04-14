@@ -25,7 +25,7 @@ Cezzu is a **monorepo** with two sibling sub-projects:
 ### iOS Preview
 
 <p align="center">
-  <img src="docs/preview/ios-preview.jpg" width="360" alt="Cezzu iOS Preview">
+  <img src="docs/preview/ios-preview.jpg" width="560" alt="Cezzu iOS Preview">
 </p>
 
 ### macOS Preview
