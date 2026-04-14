@@ -37,7 +37,9 @@ public final class HistoryStore {
         let existing = try context.fetch(descriptor).first
         let episode = request.episode
         let resolvedCoverURL = coverURL ?? URL(string: request.item?.images.best ?? "")
+        let bangumiTitle = request.item?.displayName ?? request.anime.title
         if let existing {
+            existing.bangumiTitle = bangumiTitle
             existing.lastEpisodeIndex = episode.index
             existing.lastEpisodeTitle = episode.title
             existing.ruleName = request.anime.ruleName
@@ -47,7 +49,7 @@ public final class HistoryStore {
         } else {
             let entry = WatchHistoryEntry(
                 detailURLString: key,
-                bangumiTitle: request.anime.title,
+                bangumiTitle: bangumiTitle,
                 coverURLString: resolvedCoverURL?.absoluteString,
                 ruleName: request.anime.ruleName,
                 lastEpisodeIndex: episode.index,
@@ -90,6 +92,14 @@ public final class HistoryStore {
         let key = url.absoluteString
         let descriptor = FetchDescriptor<WatchHistoryEntry>(
             predicate: #Predicate { $0.detailURLString == key }
+        )
+        return try context.fetch(descriptor).first
+    }
+
+    public func entry(forBangumiItem item: BangumiItem) throws -> WatchHistoryEntry? {
+        let title = item.displayName
+        let descriptor = FetchDescriptor<WatchHistoryEntry>(
+            predicate: #Predicate { $0.bangumiTitle == title }
         )
         return try context.fetch(descriptor).first
     }

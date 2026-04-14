@@ -216,7 +216,8 @@ public final class DetailViewModel {
             let rule = rule(for: source),
             source.ruleName == historyHint.ruleName,
             detail.roads.indices.contains(selectedRoadIndex),
-            detail.roads[selectedRoadIndex].episodes.indices.contains(historyHint.episodeIndex)
+            detail.roads[selectedRoadIndex].episodes.indices.contains(historyHint.episodeIndex),
+            detail.roads[selectedRoadIndex].episodes[historyHint.episodeIndex].title == historyHint.episodeTitle
         else {
             return nil
         }
@@ -256,7 +257,9 @@ public final class DetailViewModel {
         // 有历史恢复提示时，与搜索并行预加载偏好源的剧集数据
         let preferredPrefetchTask: Task<Void, Never>? = prefetchPreferredSourceIfNeeded()
 
-        var matchesByRule: [String: SearchResult] = [:]
+        var matchesByRule: [String: SearchResult] = Dictionary(
+            uniqueKeysWithValues: sources.map { ($0.ruleName, $0.result) }
+        )
         var initialSourceTask: Task<Void, Never>?
 
         let deadline = ContinuousClock.now + .seconds(4)
@@ -334,6 +337,12 @@ public final class DetailViewModel {
                     ruleName: hint.ruleName,
                     roads: roads
                 )
+                if let matchedRoadIndex = roads.firstIndex(where: { road in
+                    road.episodes.indices.contains(hint.episodeIndex)
+                        && road.episodes[hint.episodeIndex].title == hint.episodeTitle
+                }) {
+                    self.selectedRoadIndex = matchedRoadIndex
+                }
                 self.sourceStates[sourceID] = .loaded(detail)
             } catch {
                 self.sourceStates[sourceID] = .failed(message: "\(error)")
@@ -726,7 +735,7 @@ public struct DetailView: View {
                 }
             }
         }
-        .padding(.top, 94)
+        .padding(.top, isWide ? 94 : 116)
         .padding(.horizontal, horizontalPadding(for: viewportSize.width))
         .padding(.bottom, 42)
         .frame(maxWidth: .infinity, minHeight: heroHeight(for: viewportSize.width), alignment: .bottomLeading)
@@ -878,6 +887,12 @@ public struct DetailView: View {
             .disabled(model.playbackRequestForResume() == nil && model.playbackRequestForFirstEpisode() == nil)
             .opacity(model.playbackRequestForResume() == nil && model.playbackRequestForFirstEpisode() == nil ? 0.45 : 1)
 
+            if let resumeDetailText {
+                Text(resumeDetailText)
+                    .font(.caption)
+                    .foregroundStyle(palette.textSecondary)
+            }
+
             WrapLayout(spacing: 10, lineSpacing: 10) {
                 statPill(title: "已选源", value: model.selectedSource?.ruleName ?? "暂无")
                 statPill(title: "线路", value: selectedRoadLabel)
@@ -936,6 +951,16 @@ public struct DetailView: View {
             return "播放"
         }
         return "继续播放 \(formatMillis(historyHint.positionMs))"
+    }
+
+    private var resumeDetailText: String? {
+        guard let historyHint = model.historyHint,
+            model.playbackRequestForResume() != nil,
+            historyHint.positionMs > 0
+        else {
+            return nil
+        }
+        return "\(historyHint.episodeTitle) \(formatMillis(historyHint.positionMs))"
     }
 
     @ViewBuilder

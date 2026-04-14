@@ -130,8 +130,13 @@ public final class PlaybackCoordinator {
         await backend.seek(to: seconds)
     }
 
-    public func ingestResumeHint(_ entry: WatchHistoryEntry?) {
-        if let entry, entry.lastPositionMs > 0 {
+    public func ingestResumeHint(_ entry: WatchHistoryEntry?, for request: PlaybackRequest) {
+        if let entry,
+            entry.lastPositionMs > 0,
+            entry.ruleName == request.rule.name,
+            entry.lastEpisodeIndex == request.episodeIndex,
+            entry.lastEpisodeTitle == request.episode.title
+        {
             resumePromptPositionMs = entry.lastPositionMs
         } else {
             resumePromptPositionMs = nil

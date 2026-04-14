@@ -226,11 +226,13 @@ struct CompactRootView: View {
                 path.append(Route.detail(item))
             }
         case .detail(let item):
+            let historyEntry = try? session.history.entry(forBangumiItem: item)
             DetailView(
                 model: DetailViewModel(
                     item: item,
                     rules: session.store.enabledRules(),
-                    api: session.bangumiAPI
+                    api: session.bangumiAPI,
+                    historyHint: historyEntry.map(historyHint(from:))
                 )
             ) { request, cache in
                 activeSourceCache = cache
@@ -499,11 +501,13 @@ struct SplitRootView: View {
                 path.append(Route.detail(item))
             }
         case .detail(let item):
+            let historyEntry = try? session.history.entry(forBangumiItem: item)
             DetailView(
                 model: DetailViewModel(
                     item: item,
                     rules: session.store.enabledRules(),
-                    api: session.bangumiAPI
+                    api: session.bangumiAPI,
+                    historyHint: historyEntry.map(historyHint(from:))
                 )
             ) { request, _ in
                 path.append(Route.player(request))

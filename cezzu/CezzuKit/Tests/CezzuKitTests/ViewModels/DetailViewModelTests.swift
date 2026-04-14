@@ -382,6 +382,126 @@ struct DetailViewModelTests {
         #expect(model.currentEpisodes.count == 1)
     }
 
+    @Test("history hint exposes resume request from regular detail entry")
+    func historyHintBuildsResumeRequest() async throws {
+        let item = BangumiItem(
+            id: 5,
+            name: "Girls Band Cry",
+            nameCn: "少女乐队的呐喊",
+            summary: "",
+            airDate: "",
+            rank: 0,
+            ratingScore: 0,
+            images: .empty,
+            tags: []
+        )
+        let rule = Self.makeRule(name: "AGE")
+        let coordinator = FakeSourceSearchCoordinator(updates: [:])
+        let engine = FakeRuleEngine(
+            episodesByRuleName: [
+                "AGE": [
+                    EpisodeRoad(
+                        index: 0,
+                        label: "线路 1",
+                        episodes: [
+                            Episode(title: "第 1 集", url: URL(string: "https://play.example/gbc-1")!, index: 0)
+                        ]
+                    ),
+                    EpisodeRoad(
+                        index: 1,
+                        label: "线路 2",
+                        episodes: [
+                            Episode(title: "第 1 集", url: URL(string: "https://play.example/gbc-alt-1")!, index: 0),
+                            Episode(title: "第 2 集", url: URL(string: "https://play.example/gbc-alt-2")!, index: 1),
+                        ]
+                    ),
+                ]
+            ]
+        )
+        let model = DetailViewModel(
+            item: item,
+            rules: [rule],
+            historyHint: HistoryResumeHint(
+                bangumiTitle: item.displayName,
+                coverURLString: nil,
+                detailURL: URL(string: "https://age.example/gbc")!,
+                ruleName: "AGE",
+                episodeIndex: 1,
+                episodeTitle: "第 2 集",
+                positionMs: 601_000
+            ),
+            searchCoordinator: coordinator,
+            engine: engine
+        )
+
+        await model.load()
+
+        let request = try #require(model.playbackRequestForResume())
+        #expect(model.selectedRoadIndex == 1)
+        #expect(request.roadIndex == 1)
+        #expect(request.episodeIndex == 1)
+        #expect(request.episode.title == "第 2 集")
+    }
+
+    @Test("history hint does not expose resume request for a different road")
+    func historyHintRejectsDifferentRoad() async throws {
+        let item = BangumiItem(
+            id: 6,
+            name: "Girls Band Cry",
+            nameCn: "少女乐队的呐喊",
+            summary: "",
+            airDate: "",
+            rank: 0,
+            ratingScore: 0,
+            images: .empty,
+            tags: []
+        )
+        let rule = Self.makeRule(name: "AGE")
+        let coordinator = FakeSourceSearchCoordinator(updates: [:])
+        let engine = FakeRuleEngine(
+            episodesByRuleName: [
+                "AGE": [
+                    EpisodeRoad(
+                        index: 0,
+                        label: "线路 1",
+                        episodes: [
+                            Episode(title: "第 1 集", url: URL(string: "https://play.example/gbc-1")!, index: 0),
+                            Episode(title: "第 2 集（线路 1）", url: URL(string: "https://play.example/gbc-2")!, index: 1),
+                        ]
+                    ),
+                    EpisodeRoad(
+                        index: 1,
+                        label: "线路 2",
+                        episodes: [
+                            Episode(title: "第 1 集", url: URL(string: "https://play.example/gbc-alt-1")!, index: 0),
+                            Episode(title: "第 2 集", url: URL(string: "https://play.example/gbc-alt-2")!, index: 1),
+                        ]
+                    ),
+                ]
+            ]
+        )
+        let model = DetailViewModel(
+            item: item,
+            rules: [rule],
+            historyHint: HistoryResumeHint(
+                bangumiTitle: item.displayName,
+                coverURLString: nil,
+                detailURL: URL(string: "https://age.example/gbc")!,
+                ruleName: "AGE",
+                episodeIndex: 1,
+                episodeTitle: "第 2 集",
+                positionMs: 601_000
+            ),
+            searchCoordinator: coordinator,
+            engine: engine
+        )
+
+        await model.load()
+        model.selectRoad(0)
+
+        #expect(model.playbackRequestForResume() == nil)
+    }
+
     private static func makeRule(name: String) -> CezzuRule {
         CezzuRule(
             api: "1",

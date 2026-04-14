@@ -185,8 +185,13 @@ public struct PlayerView: View {
                 let entry = try? history.entry(forDetailURL: activeRequest.anime.detailURL),
                 entry.lastPositionMs > 0
             {
-                coordinator.ingestResumeHint(entry)
-                showResumePrompt = true
+                coordinator.ingestResumeHint(entry, for: activeRequest)
+                if coordinator.resumePromptPositionMs != nil {
+                    showResumePrompt = true
+                } else {
+                    await coordinator.startPlayback(activeRequest, resume: false)
+                    revealControlsTemporarily()
+                }
             } else {
                 await coordinator.startPlayback(activeRequest, resume: false)
                 revealControlsTemporarily()
