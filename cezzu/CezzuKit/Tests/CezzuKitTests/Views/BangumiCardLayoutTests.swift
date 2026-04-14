@@ -14,4 +14,9 @@ struct BangumiCardLayoutTests {
 
         #expect(abs(height - (160 * 4.0 / 3.0)) < 0.001)
     }
+
+    @Test("meta overlay uses bottom one fifth of the cover")
+    func metaOverlayUsesBottomOneFifth() {
+        #expect(abs(BangumiCardLayout.overlayHeightRatio - 0.2) < 0.001)
+    }
 }
