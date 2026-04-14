@@ -13,6 +13,9 @@
 
 > A native iOS / macOS streaming player for online anime — Swift + SwiftUI + Liquid Glass rewrite of [Kazumi](https://github.com/Predidit/Kazumi). It reuses Kazumi's rule protocol but ships its own rule content through the sibling [`cezzu-rule`](./cezzu-rule/) repository.
 
+> [!CAUTION]
+> This project is for study only — please support official / licensed sources.
+
 Cezzu is a **monorepo** with two sibling sub-projects:
 
 | Sub-project | Role | Entry point |

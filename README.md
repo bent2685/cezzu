@@ -13,6 +13,9 @@
 
 > 一个原生 iOS / macOS 在线动漫资源播放平台 —— 用 Swift + SwiftUI + Liquid Glass 重写 [Kazumi](https://github.com/Predidit/Kazumi)，复用其规则协议，但内容供给走自有的 [`cezzu-rule`](./cezzu-rule/) 通道。
 
+> [!CAUTION]
+> 本项目仅供学习，请支持正版资源！！！
+
 Cezzu 是一个**单仓库多项目**（monorepo），当前包含两个 sibling 子项目：
 
 | 子项目 | 角色 | 入口 |
