@@ -43,7 +43,7 @@ One SwiftUI codebase, but both sides feel genuinely native — not a phone app c
 - **Mac**: real window chrome, menu bar, system-driven light/dark mode, keyboard shortcuts, hover states — not a ported iPad binary.
 - **Progressive Liquid Glass**: on iOS 26 / macOS 26 the UI uses Apple's real Liquid Glass (dynamic refraction + morphing transitions); older platforms fall back cleanly to `Material` blur — slightly softer visually, fully functional.
 - **Single visual language**: cards, buttons, toolbars, player controls and list rows all flow through one glass component family, so surfaces feel consistent across the app instead of stitched together.
-- **Dark-mode-first**: tuned for long viewing sessions — cover art carries a bottom gradient overlay with rating and popularity, information density closer to a Netflix / Apple TV library.
+- **Dark-mode-first**: tuned for long viewing sessions — cover art carries a bottom gradient overlay with rating and popularity.
 
 ## App Preview
 
