@@ -11,7 +11,7 @@
   <a href="./README.md">中文</a> ・ <strong>English</strong>
 </p>
 
-> A native iOS / macOS streaming player for online anime — Swift + SwiftUI + Liquid Glass rewrite of [Kazumi](https://github.com/Predidit/Kazumi). It reuses Kazumi's rule protocol but ships its own rule content through the sibling [`cezzu-rule`](./cezzu-rule/) repository.
+> A native iOS / macOS **third-party video player** — inspired by the design direction of the open-source project [Kazumi](https://github.com/Predidit/Kazumi) and independently implemented on top of Apple's native stack (Swift + SwiftUI + Liquid Glass), while reusing its open-source rule protocol. Rule content itself is maintained separately in the sibling [`cezzu-rule`](./cezzu-rule/) repository; the app ships no content of its own.
 
 > [!CAUTION]
 > This project is for study only — please support official / licensed sources.
@@ -25,7 +25,7 @@ Cezzu is a **monorepo** with two sibling sub-projects:
 
 ## What it does
 
-A native app for watching online anime on iPhone / iPad / Mac. No login, no subscription, no ads.
+A native iPhone / iPad / Mac client that plays third-party video sources. No login, no subscription, no ads.
 
 ### Core features
 
@@ -35,7 +35,7 @@ A native app for watching online anime on iPhone / iPad / Mac. No login, no subs
 - **Multi-source switching**: multiple upstream video sources are wired in.
 - **Danmaku (bullet comments)**: auto-fetched and rendered in sync; font size, opacity, vertical coverage, lifetime and line height are all tunable; scroll / top-pinned / bottom-pinned layers can be toggled independently; optionally tracks playback rate.
 - **Playback**: variable speed, long-press temporary boost, Picture-in-Picture, background audio, AirPlay-style cross-device audio.
-- **Built-in rule sources**: ships with a curated set of site rules out of the box; extra sources can be subscribed or imported.
+- **Built-in rule sources**: ships with a curated set of default rules out of the box; additional sources can be subscribed to or imported manually.
 
 ### Dedicated iOS / macOS polish
 
@@ -53,7 +53,7 @@ One SwiftUI codebase, but both sides feel genuinely native — not a phone app c
 ### iOS Preview
 
 <p align="center">
-  <img src="docs/preview/ios-preview.jpg" width="560" alt="Cezzu iOS Preview">
+  <img src="docs/preview/ios-preview.jpg" width="720" alt="Cezzu iOS Preview">
 </p>
 
 ### macOS Preview
@@ -145,13 +145,39 @@ Want to edit rule content only (without touching Swift code) → just edit `cezz
 
 ## Design goals
 
-- **Genuinely native**: scrolling, gestures, PIP, background playback, memory footprint, install size — all built to system-native standards. No Flutter residue.
+- **Native-first experience**: scrolling, gestures, PIP, background playback, memory footprint and install size are all handled by Apple's native frameworks (SwiftUI / AVFoundation / WebKit) under platform-standard behaviour.
 - **Progressively enhanced design language**: a single SwiftUI codebase covers iOS / macOS. iOS 26+ ships real Liquid Glass; older platforms fall back to `Material`. Business code is platform-agnostic. All glass effects flow through `CezzuKit/Views/Design/Glass*.swift`. Hand-rolled fake glass is forbidden.
 - **Zero forking in core logic**: core code lives in `CezzuKit`. `#if os(iOS)` / `#if os(macOS)` is forbidden in `CezzuKit`; platform forking is allowed only at App-target entry points. Version forking via `if #available` is allowed only inside `Views/Design/`.
 
 ## Acknowledgements
 
-The initial content under `cezzu-rule/rules/` was forked from [`Predidit/KazumiRules`](https://github.com/Predidit/KazumiRules) (MIT License). The overall idea of Cezzu was also heavily inspired by [Kazumi](https://github.com/Predidit/Kazumi). Thanks to the upstream authors for paving the way.
+Cezzu stands on the shoulders of a number of open-source projects and public services. Sincere thanks to each of them for making this possible.
+
+- **[Kazumi](https://github.com/Predidit/Kazumi)** — Cezzu's overall design is heavily inspired by Kazumi, and its rule protocol is inherited wholesale. Without the upstream authors paving the way, this project wouldn't exist.
+- **[KazumiRules](https://github.com/Predidit/KazumiRules)** — the initial content under `cezzu-rule/rules/` is forked from KazumiRules (MIT License). Thanks to the rule maintainers for their long-running work on site adapters.
+- **[DanDanPlay](https://www.dandanplay.com/)** — special thanks to DanDanPlay: Cezzu uses their public API to power the danmaku experience, and we're grateful they've kept this capability freely open to the community for years.
+- **[Bangumi](https://bangumi.tv/)** — special thanks to Bangumi: anime metadata (search, subject detail, characters, staff, trending) is sourced from their public API. Reviews and long-form comments are not yet exposed by the official API, so they are fetched by parsing the corresponding public web pages. Backed by years of careful curation from the Bangumi community.
+
+Cezzu is an independent learning project with no affiliation or sponsorship tied to any of the above. If a maintainer of any listed project / service would like the wording adjusted, or would prefer we stop using the relevant API, please open an issue and we'll respond right away.
+
+## Disclaimer
+
+- Cezzu is an open-source **learning project** — a third-party video player for iOS / macOS. It does **not** provide, host, or distribute any video content, danmaku, or anime metadata of its own.
+- Playable content comes entirely from third-party sites via rules the user subscribes to or imports. Danmaku is fetched from DanDanPlay's public API. Anime metadata comes primarily from Bangumi's public API; reviews and long-form comments are obtained by parsing Bangumi's public web pages. Cezzu makes no warranty regarding the legality, accuracy, or availability of any of this third-party content.
+- Users are responsible for judging whether their own usage complies with local laws and regulations, and bear the corresponding legal responsibility themselves. **Please support the works you enjoy through official / licensed channels whenever possible.**
+- If you are a rights holder and believe that Cezzu or any of its default rules infringes upon your rights, please open a GitHub Issue. After verification we will take the corresponding rule / integration down.
+
+## Privacy Policy
+
+Cezzu is a **fully local client app**. There is no "Cezzu cloud" of any kind.
+
+- **No login required**: the app does not require creating or signing in to any account, and does not offer any login feature.
+- **No developer backend**: the developer does not operate any server on Cezzu's behalf. All network requests are issued directly from your device to the respective third-party services (Bangumi / DanDanPlay / third-party source sites) — **nothing is routed through a developer-controlled server.**
+- **No personal data collection**: the developer does not collect, store, or upload any device information, usage data, watch history, follow list, or search history from you.
+- **Local-only storage**: watch history, follow list, playback settings and similar data live only on your device (via SwiftData) and are removed when you uninstall the app. They never leave your device.
+- **Third-party requests**: Cezzu does make network requests to Bangumi / DanDanPlay / user-configured source sites on your behalf. Whatever metadata those requests carry (IP, User-Agent, etc.) is governed by each third-party's own privacy policy, not by Cezzu.
+
+In short: what you watch, follow, or search for is known only to your own device.
 
 ## License
 
