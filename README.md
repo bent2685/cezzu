@@ -20,6 +20,24 @@ Cezzu 是一个**单仓库多项目**（monorepo），当前包含两个 sibling
 | [`cezzu/`](./cezzu/) | Swift App 本体（`CezzuKit` framework + iOS / macOS 双 App target） | `cezzu/Cezzu.xcodeproj`（由 XcodeGen 生成） |
 | [`cezzu-rule/`](./cezzu-rule/) | 规则内容仓库（JSON 规则 + 索引 + 文档），App 默认从这里拉资源站规则 | `cezzu-rule/README.md` |
 
+## 应用预览
+
+### iOS 预览
+
+<p align="center">
+  <img src="docs/preview/ios-preview.jpg" width="360" alt="Cezzu iOS Preview">
+</p>
+
+### macOS 预览
+
+<p align="center">
+  <img src="docs/preview/mac-preview-1.jpg" width="720" alt="Cezzu macOS Preview 1">
+</p>
+
+<p align="center">
+  <img src="docs/preview/mac-preview-2.jpg" width="720" alt="Cezzu macOS Preview 2">
+</p>
+
 ## 快速开始
 
 ### 前置依赖
