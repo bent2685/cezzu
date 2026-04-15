@@ -51,6 +51,14 @@ public struct PlayerView: View {
     }
 
     public var body: some View {
+        let overlayVisibility = PlayerOverlayVisibility(
+            controlsVisible: controlsVisible,
+            isTemporaryBoosting: temporaryBoostRate != nil,
+            isSourcePanelPresented: isSourcePanelPresented,
+            isLoadingVisible: isLoadingVisible,
+            phase: coordinator.phase
+        )
+
         ZStack(alignment: .bottom) {
             PlayerSurface(
                 player: coordinator.backend.player,
@@ -79,13 +87,13 @@ public struct PlayerView: View {
                     .transition(.opacity)
             }
 
-            if controlsVisible && !isSourcePanelPresented && !isLoadingVisible {
+            if overlayVisibility.showsCenterPlaybackControls {
                 centerPlaybackControls
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                     .transition(.scale(scale: 0.92).combined(with: .opacity))
             }
 
-            if controlsVisible {
+            if overlayVisibility.showsTopBar {
                 VStack {
                     HStack(spacing: 12) {
                         legacyCircularControlButton(
@@ -128,7 +136,7 @@ public struct PlayerView: View {
                 .transition(.opacity)
             }
 
-            if controlsVisible || coordinator.phase != .playing || isLoadingVisible {
+            if overlayVisibility.showsBottomControls {
                 VStack(spacing: 12) {
                     if coordinator.requiresProxyWarning {
                         GlassPanel {
@@ -157,6 +165,13 @@ public struct PlayerView: View {
                     }
                 }
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+
+            if overlayVisibility.showsTemporaryBoostBadge, let temporaryBoostRate {
+                temporaryBoostBadge(temporaryBoostRate)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .padding(.bottom, 28)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
 
             if isSourcePanelPresented, let sourceSwitcherModel {
@@ -334,19 +349,19 @@ public struct PlayerView: View {
                 compactControlsRow
             }
         }
-        .overlay(alignment: .center) {
-            if let temporaryBoostRate {
-                Text(boostRateText(temporaryBoostRate))
-                    .font(.headline.monospacedDigit().weight(.semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .glassBackground(in: Capsule(), tint: Color.white.opacity(0.08))
-                    .allowsHitTesting(false)
-            }
-        }
         .frame(maxWidth: .infinity)
         .shadow(color: .black.opacity(0.35), radius: 10, y: 2)
+    }
+
+    @ViewBuilder
+    private func temporaryBoostBadge(_ rate: Float) -> some View {
+        Text(boostRateText(rate))
+            .font(.headline.monospacedDigit().weight(.semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .glassBackground(in: Capsule(), tint: Color.white.opacity(0.08))
+            .allowsHitTesting(false)
     }
 
     @ViewBuilder
