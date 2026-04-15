@@ -91,6 +91,7 @@ build_variant() {
   # 从 archive 提取 .app
   mkdir -p "$APP_STAGE"
   cp -R "$ARCHIVE_PATH/Products/Applications/"*.app "$APP_STAGE/"
+  ln -s /Applications "$APP_STAGE/Applications"
 
   # Ad-hoc codesign（确保 entitlements 生效）
   codesign --force --deep --sign - "$APP_STAGE/"*.app
