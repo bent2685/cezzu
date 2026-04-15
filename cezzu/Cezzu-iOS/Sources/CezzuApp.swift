@@ -6,6 +6,8 @@ import AVFoundation
 
 @main
 struct CezzuApp: App {
+    private let themeColor = Color(red: 231.0 / 255.0, green: 23.0 / 255.0, blue: 33.0 / 255.0)
+
     var body: some Scene {
         WindowGroup {
             CezzuRoot()
@@ -55,6 +57,7 @@ struct CezzuApp: App {
                         AnyView(PlayerInteractionOverlay(actions: actions))
                     }
                 ))
+                .tint(themeColor)
         }
     }
 }

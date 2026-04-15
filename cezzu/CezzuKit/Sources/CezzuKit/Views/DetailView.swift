@@ -537,7 +537,7 @@ enum DetailBackdropColorSampler {
 }
 
 private enum DetailStyle {
-    static let netflixRed = Color(red: 0.90, green: 0.02, blue: 0.05)
+    static let netflixRed = Color(red: 231.0 / 255.0, green: 23.0 / 255.0, blue: 33.0 / 255.0)
     static let cornerRadius: CGFloat = 8
 
     static func palette(for colorScheme: ColorScheme) -> DetailPalette {

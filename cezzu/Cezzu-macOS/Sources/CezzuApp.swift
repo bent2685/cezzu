@@ -4,6 +4,8 @@ import SwiftUI
 
 @main
 struct CezzuApp: App {
+    private let themeColor = Color(red: 231.0 / 255.0, green: 23.0 / 255.0, blue: 33.0 / 255.0)
+
     var body: some Scene {
         WindowGroup {
             CezzuRoot()
@@ -26,6 +28,7 @@ struct CezzuApp: App {
                         AnyView(PlayerKeyboardInteractionOverlay(actions: actions))
                     }
                 ))
+                .tint(themeColor)
         }
         .defaultSize(width: 1200, height: 800)
         .windowResizability(.contentMinSize)
