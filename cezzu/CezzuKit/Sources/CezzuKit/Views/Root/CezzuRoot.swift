@@ -441,16 +441,13 @@ struct SplitRootView: View {
             #else
                 return NavigationSplitView(columnVisibility: visibilityBinding) {
                     sidebar
-                } content: {
+                } detail: {
                     NavigationStack(path: $path) {
                         rootContent
                             .navigationDestination(for: Route.self) { route in
                                 navigationDestination(for: route)
                             }
                     }
-                } detail: {
-                    Text("选择左侧任一条目开始")
-                        .foregroundStyle(.secondary)
                 }
             #endif
         }()
