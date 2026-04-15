@@ -28,6 +28,7 @@ public struct PlayerView: View {
     @State private var showResumePrompt: Bool = false
     @State private var isImmersive: Bool = false
     @State private var controlsVisible: Bool = true
+    @State private var centerControlsMode: PlayerCenterControlsMode = .standard
     @State private var isSourcePanelPresented: Bool = false
     @State private var isDanmakuSettingsPresented: Bool = false
     @State private var scrubbingState = PlayerScrubbingState()
@@ -120,6 +121,17 @@ public struct PlayerView: View {
                             font: .subheadline
                         ) {
                             presentDanmakuSettings()
+                        }
+                        if interaction.showsOneHandModeToggle {
+                            legacyCircularControlButton(
+                                systemImage: centerControlsMode == .oneHanded
+                                    ? "rectangle.center.inset.filled"
+                                    : "hand.point.left.fill",
+                                size: 42,
+                                font: .subheadline
+                            ) {
+                                toggleCenterControlsMode()
+                            }
                         }
                         legacyCircularControlButton(
                             systemImage: "rectangle.stack.badge.play",
@@ -366,36 +378,89 @@ public struct PlayerView: View {
 
     @ViewBuilder
     private var centerPlaybackControls: some View {
+        let layout = PlayerCenterControlsLayout(mode: centerControlsMode)
+
         GlassContainer {
-            HStack(spacing: 18) {
-                GlassPlaybackControlButton(
-                    systemImage: "gobackward.10",
-                    accessibilityLabel: "快退 10 秒"
-                ) {
-                    seekRelative(-10)
-                }
-
-                GlassPlaybackControlButton(
-                    systemImage: coordinator.phase == .playing ? "pause.fill" : "play.fill",
-                    accessibilityLabel: coordinator.phase == .playing ? "暂停" : "播放",
-                    prominence: .primary
-                ) {
-                    if coordinator.phase == .playing {
-                        coordinator.pause()
-                    } else {
-                        coordinator.resume()
-                    }
-                    revealControlsTemporarily()
-                }
-
-                GlassPlaybackControlButton(
-                    systemImage: "goforward.10",
-                    accessibilityLabel: "快进 10 秒"
-                ) {
-                    seekRelative(10)
-                }
+            controlsStack(layout: layout) {
+                centerPlaybackButtons(layout: layout)
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, layout.horizontalPadding)
+            .padding(layout.edgePadding)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: layout.stackAlignment)
+    }
+
+    @ViewBuilder
+    private func centerPlaybackButtons(layout: PlayerCenterControlsLayout) -> some View {
+        GlassPlaybackControlButton(
+            systemImage: "gobackward.10",
+            accessibilityLabel: "快退 10 秒"
+        ) {
+            seekRelative(-10)
+        }
+
+        if layout.showsCenterPlayPause {
+            GlassPlaybackControlButton(
+                systemImage: coordinator.phase == .playing ? "pause.fill" : "play.fill",
+                accessibilityLabel: coordinator.phase == .playing ? "暂停" : "播放",
+                prominence: .primary
+            ) {
+                togglePlayPause()
+            }
+        }
+
+        GlassPlaybackControlButton(
+            systemImage: "goforward.10",
+            accessibilityLabel: "快进 10 秒"
+        ) {
+            seekRelative(10)
+        }
+    }
+
+    @ViewBuilder
+    private func episodeCluster(size: CGFloat = 44, font: Font = .headline) -> some View {
+        iconControlButton(
+            systemImage: "backward.end.fill",
+            size: size,
+            font: font,
+            isEnabled: activeRequest.hasPreviousEpisode
+        ) {
+            playNeighborEpisode(step: -1)
+        }
+
+        if PlayerCenterControlsLayout(mode: centerControlsMode).embedsPlayPauseInEpisodeRow {
+            iconControlButton(
+                systemImage: coordinator.phase == .playing ? "pause.fill" : "play.fill",
+                size: size,
+                font: font
+            ) {
+                togglePlayPause()
+            }
+        }
+
+        iconControlButton(
+            systemImage: "forward.end.fill",
+            size: size,
+            font: font,
+            isEnabled: activeRequest.hasNextEpisode
+        ) {
+            playNeighborEpisode(step: 1)
+        }
+    }
+
+    @ViewBuilder
+    private func controlsStack<Content: View>(
+        layout: PlayerCenterControlsLayout,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        if layout.isVertical {
+            VStack(spacing: layout.spacing) {
+                content()
+            }
+        } else {
+            HStack(spacing: layout.spacing) {
+                content()
+            }
         }
     }
 
@@ -443,18 +508,7 @@ public struct PlayerView: View {
     private var wideControlsRow: some View {
         HStack {
             HStack(spacing: 22) {
-                iconControlButton(
-                    systemImage: "backward.end.fill",
-                    isEnabled: activeRequest.hasPreviousEpisode
-                ) {
-                    playNeighborEpisode(step: -1)
-                }
-                iconControlButton(
-                    systemImage: "forward.end.fill",
-                    isEnabled: activeRequest.hasNextEpisode
-                ) {
-                    playNeighborEpisode(step: 1)
-                }
+                episodeCluster()
             }
 
             Spacer(minLength: 24)
@@ -484,22 +538,7 @@ public struct PlayerView: View {
     @ViewBuilder
     private var compactControlsRow: some View {
         HStack(spacing: 18) {
-            iconControlButton(
-                systemImage: "backward.end.fill",
-                size: 40,
-                font: .title3,
-                isEnabled: activeRequest.hasPreviousEpisode
-            ) {
-                playNeighborEpisode(step: -1)
-            }
-            iconControlButton(
-                systemImage: "forward.end.fill",
-                size: 40,
-                font: .title3,
-                isEnabled: activeRequest.hasNextEpisode
-            ) {
-                playNeighborEpisode(step: 1)
-            }
+            episodeCluster(size: 40, font: .title3)
             systemPlayback.routePickerButton()
             if pictureInPictureController.isSupported {
                 iconControlButton(
@@ -606,12 +645,7 @@ public struct PlayerView: View {
                 toggleControlsVisibility()
             },
             togglePlayPause: {
-                if coordinator.phase == .playing {
-                    coordinator.pause()
-                } else {
-                    coordinator.resume()
-                }
-                revealControlsTemporarily()
+                togglePlayPause()
             },
             seekRelative: { delta in
                 seekRelative(delta)
@@ -647,6 +681,15 @@ public struct PlayerView: View {
     private func seekRelative(_ delta: TimeInterval) {
         let target = min(max(coordinator.backend.currentTime + delta, 0), coordinator.backend.duration)
         Task { await coordinator.seek(to: target) }
+        revealControlsTemporarily()
+    }
+
+    private func togglePlayPause() {
+        if coordinator.phase == .playing {
+            coordinator.pause()
+        } else {
+            coordinator.resume()
+        }
         revealControlsTemporarily()
     }
 
@@ -724,6 +767,13 @@ public struct PlayerView: View {
         }
         chrome.setSidebarHidden(next)
         presentation.setSystemFullscreen(next)
+        revealControlsTemporarily()
+    }
+
+    private func toggleCenterControlsMode() {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            centerControlsMode = centerControlsMode == .standard ? .oneHanded : .standard
+        }
         revealControlsTemporarily()
     }
 
@@ -922,15 +972,18 @@ public struct PlayerInteractionActions: Sendable {
 
 public struct PlayerInteractionController: @unchecked Sendable {
     public let showsFullscreenToggle: Bool
+    public let showsOneHandModeToggle: Bool
     private let makeOverlayImpl: @MainActor (PlayerInteractionActions) -> AnyView
 
     public init(
         showsFullscreenToggle: Bool = true,
+        showsOneHandModeToggle: Bool = false,
         makeOverlay: @escaping @MainActor (PlayerInteractionActions) -> AnyView = { _ in
             AnyView(EmptyView())
         }
     ) {
         self.showsFullscreenToggle = showsFullscreenToggle
+        self.showsOneHandModeToggle = showsOneHandModeToggle
         self.makeOverlayImpl = makeOverlay
     }
 

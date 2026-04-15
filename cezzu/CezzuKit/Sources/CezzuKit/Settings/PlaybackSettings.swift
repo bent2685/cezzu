@@ -28,120 +28,237 @@ public enum PlaybackSettings {
     public static let showScrollDanmakuDefault = true
     public static let followPlaybackRateDanmakuDefault = true
 
+    struct Store {
+        let defaults: UserDefaults
+
+        var enableLocalProxy: Bool {
+            get {
+                if defaults.object(forKey: PlaybackSettings.enableLocalProxyKey) == nil {
+                    return PlaybackSettings.enableLocalProxyDefault
+                }
+                return defaults.bool(forKey: PlaybackSettings.enableLocalProxyKey)
+            }
+            set {
+                defaults.set(newValue, forKey: PlaybackSettings.enableLocalProxyKey)
+            }
+        }
+
+        var enableDanmaku: Bool {
+            get {
+                bool(forKey: PlaybackSettings.enableDanmakuKey, defaultValue: PlaybackSettings.enableDanmakuDefault)
+            }
+            set {
+                defaults.set(newValue, forKey: PlaybackSettings.enableDanmakuKey)
+            }
+        }
+
+        var danmakuFontSize: Double {
+            get {
+                double(forKey: PlaybackSettings.danmakuFontSizeKey, defaultValue: PlaybackSettings.danmakuFontSizeDefault)
+            }
+            set {
+                defaults.set(newValue, forKey: PlaybackSettings.danmakuFontSizeKey)
+            }
+        }
+
+        var danmakuOpacity: Double {
+            get {
+                double(forKey: PlaybackSettings.danmakuOpacityKey, defaultValue: PlaybackSettings.danmakuOpacityDefault)
+            }
+            set {
+                defaults.set(newValue, forKey: PlaybackSettings.danmakuOpacityKey)
+            }
+        }
+
+        var danmakuArea: Double {
+            get {
+                double(forKey: PlaybackSettings.danmakuAreaKey, defaultValue: PlaybackSettings.danmakuAreaDefault)
+            }
+            set {
+                defaults.set(newValue, forKey: PlaybackSettings.danmakuAreaKey)
+            }
+        }
+
+        var danmakuDuration: Double {
+            get {
+                double(forKey: PlaybackSettings.danmakuDurationKey, defaultValue: PlaybackSettings.danmakuDurationDefault)
+            }
+            set {
+                defaults.set(newValue, forKey: PlaybackSettings.danmakuDurationKey)
+            }
+        }
+
+        var danmakuLineHeight: Double {
+            get {
+                double(forKey: PlaybackSettings.danmakuLineHeightKey, defaultValue: PlaybackSettings.danmakuLineHeightDefault)
+            }
+            set {
+                defaults.set(newValue, forKey: PlaybackSettings.danmakuLineHeightKey)
+            }
+        }
+
+        var showTopDanmaku: Bool {
+            get {
+                bool(forKey: PlaybackSettings.showTopDanmakuKey, defaultValue: PlaybackSettings.showTopDanmakuDefault)
+            }
+            set {
+                defaults.set(newValue, forKey: PlaybackSettings.showTopDanmakuKey)
+            }
+        }
+
+        var showBottomDanmaku: Bool {
+            get {
+                bool(forKey: PlaybackSettings.showBottomDanmakuKey, defaultValue: PlaybackSettings.showBottomDanmakuDefault)
+            }
+            set {
+                defaults.set(newValue, forKey: PlaybackSettings.showBottomDanmakuKey)
+            }
+        }
+
+        var showScrollDanmaku: Bool {
+            get {
+                bool(forKey: PlaybackSettings.showScrollDanmakuKey, defaultValue: PlaybackSettings.showScrollDanmakuDefault)
+            }
+            set {
+                defaults.set(newValue, forKey: PlaybackSettings.showScrollDanmakuKey)
+            }
+        }
+
+        var followPlaybackRateDanmaku: Bool {
+            get {
+                bool(
+                    forKey: PlaybackSettings.followPlaybackRateDanmakuKey,
+                    defaultValue: PlaybackSettings.followPlaybackRateDanmakuDefault
+                )
+            }
+            set {
+                defaults.set(newValue, forKey: PlaybackSettings.followPlaybackRateDanmakuKey)
+            }
+        }
+
+        private func bool(forKey key: String, defaultValue: Bool) -> Bool {
+            if defaults.object(forKey: key) == nil {
+                return defaultValue
+            }
+            return defaults.bool(forKey: key)
+        }
+
+        private func double(forKey key: String, defaultValue: Double) -> Double {
+            if defaults.object(forKey: key) == nil {
+                return defaultValue
+            }
+            return defaults.double(forKey: key)
+        }
+    }
+
     /// 当前值（同步读取）。
     public static var enableLocalProxy: Bool {
         get {
-            if UserDefaults.standard.object(forKey: enableLocalProxyKey) == nil {
-                return enableLocalProxyDefault
-            }
-            return UserDefaults.standard.bool(forKey: enableLocalProxyKey)
+            Store(defaults: .standard).enableLocalProxy
         }
         set {
-            UserDefaults.standard.set(newValue, forKey: enableLocalProxyKey)
+            var store = Store(defaults: .standard)
+            store.enableLocalProxy = newValue
         }
     }
 
     public static var enableDanmaku: Bool {
         get {
-            bool(forKey: enableDanmakuKey, defaultValue: enableDanmakuDefault)
+            Store(defaults: .standard).enableDanmaku
         }
         set {
-            UserDefaults.standard.set(newValue, forKey: enableDanmakuKey)
+            var store = Store(defaults: .standard)
+            store.enableDanmaku = newValue
         }
     }
 
     public static var danmakuFontSize: Double {
         get {
-            double(forKey: danmakuFontSizeKey, defaultValue: danmakuFontSizeDefault)
+            Store(defaults: .standard).danmakuFontSize
         }
         set {
-            UserDefaults.standard.set(newValue, forKey: danmakuFontSizeKey)
+            var store = Store(defaults: .standard)
+            store.danmakuFontSize = newValue
         }
     }
 
     public static var danmakuOpacity: Double {
         get {
-            double(forKey: danmakuOpacityKey, defaultValue: danmakuOpacityDefault)
+            Store(defaults: .standard).danmakuOpacity
         }
         set {
-            UserDefaults.standard.set(newValue, forKey: danmakuOpacityKey)
+            var store = Store(defaults: .standard)
+            store.danmakuOpacity = newValue
         }
     }
 
     public static var danmakuArea: Double {
         get {
-            double(forKey: danmakuAreaKey, defaultValue: danmakuAreaDefault)
+            Store(defaults: .standard).danmakuArea
         }
         set {
-            UserDefaults.standard.set(newValue, forKey: danmakuAreaKey)
+            var store = Store(defaults: .standard)
+            store.danmakuArea = newValue
         }
     }
 
     public static var danmakuDuration: Double {
         get {
-            double(forKey: danmakuDurationKey, defaultValue: danmakuDurationDefault)
+            Store(defaults: .standard).danmakuDuration
         }
         set {
-            UserDefaults.standard.set(newValue, forKey: danmakuDurationKey)
+            var store = Store(defaults: .standard)
+            store.danmakuDuration = newValue
         }
     }
 
     public static var danmakuLineHeight: Double {
         get {
-            double(forKey: danmakuLineHeightKey, defaultValue: danmakuLineHeightDefault)
+            Store(defaults: .standard).danmakuLineHeight
         }
         set {
-            UserDefaults.standard.set(newValue, forKey: danmakuLineHeightKey)
+            var store = Store(defaults: .standard)
+            store.danmakuLineHeight = newValue
         }
     }
 
     public static var showTopDanmaku: Bool {
         get {
-            bool(forKey: showTopDanmakuKey, defaultValue: showTopDanmakuDefault)
+            Store(defaults: .standard).showTopDanmaku
         }
         set {
-            UserDefaults.standard.set(newValue, forKey: showTopDanmakuKey)
+            var store = Store(defaults: .standard)
+            store.showTopDanmaku = newValue
         }
     }
 
     public static var showBottomDanmaku: Bool {
         get {
-            bool(forKey: showBottomDanmakuKey, defaultValue: showBottomDanmakuDefault)
+            Store(defaults: .standard).showBottomDanmaku
         }
         set {
-            UserDefaults.standard.set(newValue, forKey: showBottomDanmakuKey)
+            var store = Store(defaults: .standard)
+            store.showBottomDanmaku = newValue
         }
     }
 
     public static var showScrollDanmaku: Bool {
         get {
-            bool(forKey: showScrollDanmakuKey, defaultValue: showScrollDanmakuDefault)
+            Store(defaults: .standard).showScrollDanmaku
         }
         set {
-            UserDefaults.standard.set(newValue, forKey: showScrollDanmakuKey)
+            var store = Store(defaults: .standard)
+            store.showScrollDanmaku = newValue
         }
     }
 
     public static var followPlaybackRateDanmaku: Bool {
         get {
-            bool(forKey: followPlaybackRateDanmakuKey, defaultValue: followPlaybackRateDanmakuDefault)
+            Store(defaults: .standard).followPlaybackRateDanmaku
         }
         set {
-            UserDefaults.standard.set(newValue, forKey: followPlaybackRateDanmakuKey)
+            var store = Store(defaults: .standard)
+            store.followPlaybackRateDanmaku = newValue
         }
-    }
-
-    private static func bool(forKey key: String, defaultValue: Bool) -> Bool {
-        if UserDefaults.standard.object(forKey: key) == nil {
-            return defaultValue
-        }
-        return UserDefaults.standard.bool(forKey: key)
-    }
-
-    private static func double(forKey key: String, defaultValue: Double) -> Double {
-        if UserDefaults.standard.object(forKey: key) == nil {
-            return defaultValue
-        }
-        return UserDefaults.standard.double(forKey: key)
     }
 }
