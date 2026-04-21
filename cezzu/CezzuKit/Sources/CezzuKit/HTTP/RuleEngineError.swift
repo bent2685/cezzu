@@ -8,6 +8,7 @@ public enum RuleEngineError: Error, Sendable, CustomStringConvertible {
     case parse(message: String, rule: String)
     case xpathEvaluation(message: String, rule: String)
     case noResults(rule: String)
+    case captchaRequired(rule: String)
     case cancelled
 
     public var description: String {
@@ -19,6 +20,7 @@ public enum RuleEngineError: Error, Sendable, CustomStringConvertible {
         case .xpathEvaluation(let msg, let rule):
             return "XPath evaluation failed in rule '\(rule)': \(msg)"
         case .noResults(let rule): return "rule '\(rule)' produced no results"
+        case .captchaRequired(let rule): return "rule '\(rule)' requires captcha verification"
         case .cancelled: return "operation cancelled"
         }
     }

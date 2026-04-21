@@ -42,6 +42,7 @@ public final class LiveRuleEngine: RuleEngine, Sendable {
                 rule: rule.name
             )
         }
+        try detectCaptcha(doc: doc, rule: rule)
         guard let baseURL = URL(string: rule.baseURL) else {
             throw RuleEngineError.invalidURL(rule.baseURL)
         }
@@ -115,6 +116,19 @@ public final class LiveRuleEngine: RuleEngine, Sendable {
             }
         }
         return roads
+    }
+
+    // MARK: - anti-crawler detection
+
+    /// 根据规则的 `antiCrawlerConfig` XPath 探测当前页面是否是验证码页。
+    /// 命中即抛 `.captchaRequired`，由上层决定是否弹验证码 UI。
+    func detectCaptcha(doc: any XPathHTMLDocument, rule: CezzuRule) throws {
+        guard let cfg = rule.antiCrawlerConfig, cfg.enabled else { return }
+        let probes = [cfg.captchaImage, cfg.captchaButton].filter { !$0.isEmpty }
+        guard !probes.isEmpty else { return }
+        for xpath in probes where !doc.xpath(xpath).isEmpty {
+            throw RuleEngineError.captchaRequired(rule: rule.name)
+        }
     }
 
     // MARK: - helpers
