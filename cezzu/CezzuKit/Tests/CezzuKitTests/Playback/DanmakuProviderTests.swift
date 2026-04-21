@@ -75,6 +75,69 @@ struct DanmakuProviderTests {
         #expect(value == 17_580_001)
     }
 
+    @Test("custom credentials override built-in when toggle is on")
+    func customCredentialsOverrideBuiltIn() {
+        let snapshot = DanDanPlayCredentialsStore.Snapshot(
+            useCustom: true,
+            appID: "user-id",
+            appSecret: "user-secret"
+        )
+        let credentials = DanDanPlayCredentials(
+            bundle: .main,
+            environment: ["DANDANPLAY_APP_ID": "builtin-id", "DANDANPLAY_APP_SECRET": "builtin-secret"],
+            storeSnapshot: snapshot
+        )
+
+        #expect(credentials?.appID == "user-id")
+        #expect(credentials?.appSecret == "user-secret")
+    }
+
+    @Test("custom credentials fall back to built-in when toggle is off")
+    func customCredentialsFallbackToBuiltIn() {
+        let snapshot = DanDanPlayCredentialsStore.Snapshot(
+            useCustom: false,
+            appID: "user-id",
+            appSecret: "user-secret"
+        )
+        let credentials = DanDanPlayCredentials(
+            bundle: .main,
+            environment: ["DANDANPLAY_APP_ID": "builtin-id", "DANDANPLAY_APP_SECRET": "builtin-secret"],
+            storeSnapshot: snapshot
+        )
+
+        #expect(credentials?.appID == "builtin-id")
+        #expect(credentials?.appSecret == "builtin-secret")
+    }
+
+    @Test("custom credentials ignored when toggle on but fields empty")
+    func customCredentialsIgnoredWhenEmpty() {
+        let snapshot = DanDanPlayCredentialsStore.Snapshot(
+            useCustom: true,
+            appID: "   ",
+            appSecret: ""
+        )
+        let credentials = DanDanPlayCredentials(
+            bundle: .main,
+            environment: ["DANDANPLAY_APP_ID": "builtin-id", "DANDANPLAY_APP_SECRET": "builtin-secret"],
+            storeSnapshot: snapshot
+        )
+
+        #expect(credentials?.appID == "builtin-id")
+        #expect(credentials?.appSecret == "builtin-secret")
+    }
+
+    @Test("credentials init returns nil when no source provides values")
+    func credentialsNilWhenNothingConfigured() {
+        let snapshot = DanDanPlayCredentialsStore.Snapshot(useCustom: false, appID: "", appSecret: "")
+        let credentials = DanDanPlayCredentials(
+            bundle: .main,
+            environment: [:],
+            storeSnapshot: snapshot
+        )
+
+        #expect(credentials == nil)
+    }
+
     private func makeRule() -> CezzuRule {
         CezzuRule(
             api: "0.1.0",

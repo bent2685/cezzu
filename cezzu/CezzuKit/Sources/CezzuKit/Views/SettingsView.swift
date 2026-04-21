@@ -38,6 +38,8 @@ public struct SettingsView: View {
                 }
             }
 
+            DanDanPlayCredentialsSettings()
+
             Section("数据源") {
                 NavigationLink {
                     RuleManagerView(store: ruleStore)

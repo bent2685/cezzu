@@ -27,7 +27,18 @@ struct DanDanPlayCredentials: Sendable {
     let appID: String
     let appSecret: String
 
-    init?(bundle: Bundle = .main, environment: [String: String] = ProcessInfo.processInfo.environment) {
+    init?(
+        bundle: Bundle = .main,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        storeSnapshot: DanDanPlayCredentialsStore.Snapshot = DanDanPlayCredentialsStore.snapshot()
+    ) {
+        // 优先使用用户在设置里填的自定义凭证。
+        if let (id, secret) = storeSnapshot.resolvedPair {
+            self.appID = id
+            self.appSecret = secret
+            return
+        }
+
         let infoAppID = (bundle.object(forInfoDictionaryKey: "DanDanPlayAppID") as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let infoAppSecret = (bundle.object(forInfoDictionaryKey: "DanDanPlayAppSecret") as? String)?
