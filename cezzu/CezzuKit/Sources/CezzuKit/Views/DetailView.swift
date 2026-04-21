@@ -17,6 +17,24 @@ public struct CaptchaChallenge: Hashable, Sendable, Identifiable {
     }
 }
 
+/// 搜索期间被拦下的源。当前只有 captcha 一种原因，预留 enum 以便后续扩展
+/// （比如 Cloudflare challenge、IP 封禁等）。
+public struct BlockedSource: Hashable, Sendable, Identifiable {
+    public enum Reason: Hashable, Sendable {
+        case captchaRequired(url: URL, userAgent: String)
+    }
+
+    public let ruleName: String
+    public let reason: Reason
+
+    public var id: String { ruleName }
+
+    public init(ruleName: String, reason: Reason) {
+        self.ruleName = ruleName
+        self.reason = reason
+    }
+}
+
 public struct PlayableSource: Hashable, Sendable, Identifiable {
     public let result: SearchResult
 
@@ -90,8 +108,13 @@ public final class DetailViewModel {
     public private(set) var tabErrors: [DetailTab: String] = [:]
     public let historyHint: HistoryResumeHint?
 
-    /// 搜索过程中命中验证码的规则集合。UI 弹出 `CaptchaVerificationSheet` 时从这里挑一个。
-    public private(set) var pendingCaptchaChallenges: [CaptchaChallenge] = []
+    /// 搜索过程中被反爬拦截（目前只有 captcha）但还没解决的源。
+    /// UI 把它们排在正常 sources 之后，用户点击才会触发 `openCaptcha`。
+    public private(set) var blockedSources: [BlockedSource] = []
+
+    /// 当前正在进行的验证码挑战。只有用户主动点 blocked source 才会被赋值，
+    /// sheet 通过 `.sheet(item:)` 绑到这个字段，避免进详情页就弹窗。
+    public var activeCaptcha: CaptchaChallenge?
 
     private var rules: [CezzuRule]
     private let api: BangumiAPIClientProtocol
@@ -172,15 +195,63 @@ public final class DetailViewModel {
         selectedRoadIndex = index
     }
 
-    /// 用户在 sheet 里完成了验证，把对应 challenge 从队列里拿掉并触发一次重新搜索。
-    public func resolveCaptcha(_ challenge: CaptchaChallenge) async {
-        pendingCaptchaChallenges.removeAll { $0.ruleName == challenge.ruleName }
-        sources = []
-        await loadSourcesIfNeeded()
+    /// 用户点击了 blocked 源 —— 打开对应的验证码 sheet。如果原因不是 captcha（未来扩展时）
+    /// 就只把它从 blocked 里移掉，交给调用方自行重试。
+    public func openCaptcha(for ruleName: String) {
+        guard let blocked = blockedSources.first(where: { $0.ruleName == ruleName }) else { return }
+        switch blocked.reason {
+        case .captchaRequired(let url, let userAgent):
+            activeCaptcha = CaptchaChallenge(
+                ruleName: ruleName,
+                url: url,
+                userAgent: userAgent
+            )
+        }
     }
 
-    public func dismissCaptcha(_ challenge: CaptchaChallenge) {
-        pendingCaptchaChallenges.removeAll { $0.ruleName == challenge.ruleName }
+    /// 用户在 sheet 里完成了验证：清掉 active / blocked 条目，对该规则单独重试搜索。
+    public func resolveCaptcha(_ challenge: CaptchaChallenge) async {
+        activeCaptcha = nil
+        blockedSources.removeAll { $0.ruleName == challenge.ruleName }
+        await retrySearch(ruleName: challenge.ruleName)
+    }
+
+    public func dismissCaptcha() {
+        activeCaptcha = nil
+    }
+
+    /// 针对单个规则重新搜一次。成功则把结果并入 sources；再次命中 captcha 则重新进 blocked。
+    private func retrySearch(ruleName: String) async {
+        guard let rule = rules.first(where: { $0.name == ruleName }) else { return }
+        let stream = searchCoordinator.searchAll(
+            keywords: searchKeywords,
+            rules: [rule],
+            deadline: .now + .seconds(4)
+        )
+        var matchesByRule: [String: SearchResult] = Dictionary(
+            uniqueKeysWithValues: sources.map { ($0.ruleName, $0.result) }
+        )
+        let keywords = searchKeywords
+        for await update in stream {
+            if case .ruleCaptchaRequired(let name, let url, let userAgent) = update {
+                let reason = BlockedSource.Reason.captchaRequired(url: url, userAgent: userAgent)
+                if let index = blockedSources.firstIndex(where: { $0.ruleName == name }) {
+                    blockedSources[index] = BlockedSource(ruleName: name, reason: reason)
+                } else {
+                    blockedSources.append(BlockedSource(ruleName: name, reason: reason))
+                }
+                continue
+            }
+            if case .ruleResults(let name, let results) = update {
+                if let chosen = keywords.lazy.compactMap({ self.bestMatch(in: results, keyword: $0) }).first {
+                    matchesByRule[name] = chosen
+                }
+            }
+        }
+        sources = sortedSources(from: matchesByRule)
+        if selectedSourceID == nil, let first = sources.first {
+            await selectSource(first.id)
+        }
     }
 
     public var selectedSource: PlayableSource? {
@@ -299,17 +370,13 @@ public final class DetailViewModel {
         )
         let keywords = searchKeywords
         for await update in stream {
-            if case .ruleCaptchaRequired(let name) = update,
-                let rule = rules.first(where: { $0.name == name }),
-                !pendingCaptchaChallenges.contains(where: { $0.ruleName == name })
-            {
-                pendingCaptchaChallenges.append(
-                    CaptchaChallenge(
-                        ruleName: name,
-                        url: URL(string: rule.baseURL) ?? URL(string: "about:blank")!,
-                        userAgent: rule.userAgent
-                    )
-                )
+            if case .ruleCaptchaRequired(let name, let url, let userAgent) = update {
+                let reason = BlockedSource.Reason.captchaRequired(url: url, userAgent: userAgent)
+                if let index = blockedSources.firstIndex(where: { $0.ruleName == name }) {
+                    blockedSources[index] = BlockedSource(ruleName: name, reason: reason)
+                } else {
+                    blockedSources.append(BlockedSource(ruleName: name, reason: reason))
+                }
                 continue
             }
             if case .ruleResults(let name, let results) = update,
@@ -680,12 +747,8 @@ public struct DetailView: View {
             await model.updateRules(ruleStore.enabledRules())
         }
         .sheet(item: Binding(
-            get: { model.pendingCaptchaChallenges.first },
-            set: { newValue in
-                if newValue == nil, let current = model.pendingCaptchaChallenges.first {
-                    model.dismissCaptcha(current)
-                }
-            }
+            get: { model.activeCaptcha },
+            set: { model.activeCaptcha = $0 }
         )) { challenge in
             CaptchaVerificationSheet(
                 url: challenge.url,
@@ -1179,10 +1242,10 @@ public struct DetailView: View {
 
     @ViewBuilder
     private var sourcesContent: some View {
-        if model.isSearchingSources {
+        if model.isSearchingSources && model.sources.isEmpty && model.blockedSources.isEmpty {
             ProgressView("正在匹配可播放源…")
                 .tint(palette.textPrimary)
-        } else if model.sources.isEmpty {
+        } else if model.sources.isEmpty && model.blockedSources.isEmpty {
             Text(model.sourceSearchFailed ?? "暂无可播放源")
                 .foregroundStyle(palette.textSecondary)
         } else {
@@ -1209,6 +1272,31 @@ public struct DetailView: View {
                                     }
                             }
                             .buttonStyle(.plain)
+                        }
+                        ForEach(model.blockedSources) { blocked in
+                            Button {
+                                model.openCaptcha(for: blocked.ruleName)
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "lock.shield")
+                                        .font(.caption.weight(.bold))
+                                    Text(blocked.ruleName)
+                                        .font(.subheadline.weight(.bold))
+                                }
+                                .foregroundStyle(palette.textSecondary.opacity(0.7))
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 10)
+                                .background(
+                                    palette.surfaceRaised.opacity(0.4),
+                                    in: RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
+                                )
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
+                                        .stroke(palette.hairline.opacity(0.6), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .help("需要验证码，点击完成人机校验")
                         }
                     }
                     .padding(.vertical, 2)

@@ -44,7 +44,8 @@ public struct CaptchaVerificationSheet: View {
                         handle = newHandle
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, minHeight: 320, maxHeight: .infinity)
+                .layoutPriority(1)
 
                 Button {
                     Task { await completeVerification() }
@@ -72,7 +73,11 @@ public struct CaptchaVerificationSheet: View {
                 }
             }
         }
-        .presentationDetents([.large])
+        #if os(iOS)
+            .presentationDetents([.large])
+        #else
+            .frame(minWidth: 640, idealWidth: 760, minHeight: 560, idealHeight: 720)
+        #endif
     }
 
     @MainActor

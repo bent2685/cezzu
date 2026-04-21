@@ -22,7 +22,9 @@ public actor SearchCoordinator: SourceSearchCoordinating {
         case ruleStarted(name: String)
         case ruleResults(name: String, results: [SearchResult])
         case ruleFailed(name: String, message: String)
-        case ruleCaptchaRequired(name: String)
+        /// `url` 是命中验证码的真实搜索 URL（规则 searchURL 模板替换 `@keyword` 后的结果），
+        /// 让 UI 把 WKWebView 直接 load 到拦截页、而不是无关的 baseURL 首页。
+        case ruleCaptchaRequired(name: String, url: URL, userAgent: String)
         case finished
     }
 
@@ -106,7 +108,16 @@ public actor SearchCoordinator: SourceSearchCoordinating {
                         continuation.yield(.ruleResults(name: rule.name, results: results))
                     } catch let error as RuleEngineError {
                         if case .captchaRequired(let ruleName) = error {
-                            continuation.yield(.ruleCaptchaRequired(name: ruleName))
+                            let url = rule.resolvedSearchURL(for: keyword)
+                                ?? URL(string: rule.baseURL)
+                                ?? URL(string: "about:blank")!
+                            continuation.yield(
+                                .ruleCaptchaRequired(
+                                    name: ruleName,
+                                    url: url,
+                                    userAgent: rule.userAgent
+                                )
+                            )
                         } else {
                             continuation.yield(.ruleFailed(name: rule.name, message: "\(error)"))
                         }
@@ -143,7 +154,16 @@ public actor SearchCoordinator: SourceSearchCoordinating {
                             // 截止时间到达或外部取消，静默忽略
                         } catch let error as RuleEngineError {
                             if case .captchaRequired(let ruleName) = error {
-                                continuation.yield(.ruleCaptchaRequired(name: ruleName))
+                                let url = rule.resolvedSearchURL(for: keyword)
+                                    ?? URL(string: rule.baseURL)
+                                    ?? URL(string: "about:blank")!
+                                continuation.yield(
+                                    .ruleCaptchaRequired(
+                                        name: ruleName,
+                                        url: url,
+                                        userAgent: rule.userAgent
+                                    )
+                                )
                             } else {
                                 continuation.yield(.ruleFailed(name: rule.name, message: "\(error)"))
                             }

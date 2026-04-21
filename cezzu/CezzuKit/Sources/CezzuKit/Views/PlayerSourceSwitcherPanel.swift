@@ -10,6 +10,8 @@ final class PlayerSourceSwitcherModel {
     private(set) var sourceStates: [PlayableSource.ID: SourceEpisodesState] = [:]
     private(set) var isSearchingSources: Bool = false
     private(set) var sourceSearchFailed: String?
+    private(set) var blockedSources: [BlockedSource] = []
+    var activeCaptcha: CaptchaChallenge?
 
     private let searchCoordinator: SourceSearchCoordinating
     private let engine: RuleEngine
@@ -93,6 +95,15 @@ final class PlayerSourceSwitcherModel {
             deadline: deadline
         )
         for await update in stream {
+            if case .ruleCaptchaRequired(let name, let url, let userAgent) = update {
+                let reason = BlockedSource.Reason.captchaRequired(url: url, userAgent: userAgent)
+                if let index = blockedSources.firstIndex(where: { $0.ruleName == name }) {
+                    blockedSources[index] = BlockedSource(ruleName: name, reason: reason)
+                } else {
+                    blockedSources.append(BlockedSource(ruleName: name, reason: reason))
+                }
+                continue
+            }
             if case .ruleResults(let name, let results) = update,
                 matchesByRule[name] == nil
             {
@@ -154,6 +165,54 @@ final class PlayerSourceSwitcherModel {
 
     func selectRoad(_ index: Int) {
         selectedRoadIndex = index
+    }
+
+    func openCaptcha(for ruleName: String) {
+        guard let blocked = blockedSources.first(where: { $0.ruleName == ruleName }) else { return }
+        switch blocked.reason {
+        case .captchaRequired(let url, let userAgent):
+            activeCaptcha = CaptchaChallenge(ruleName: ruleName, url: url, userAgent: userAgent)
+        }
+    }
+
+    func dismissCaptcha() {
+        activeCaptcha = nil
+    }
+
+    func resolveCaptcha(_ challenge: CaptchaChallenge) async {
+        activeCaptcha = nil
+        blockedSources.removeAll { $0.ruleName == challenge.ruleName }
+        guard let rule = rules.first(where: { $0.name == challenge.ruleName }),
+            let item = currentRequest.item
+        else { return }
+        let keywords = searchKeywords(for: item)
+        let stream = searchCoordinator.searchAll(
+            keywords: keywords,
+            rules: [rule],
+            deadline: .now + .seconds(4)
+        )
+        var matchesByRule: [String: SearchResult] = Dictionary(
+            uniqueKeysWithValues: sources.map { ($0.ruleName, $0.result) }
+        )
+        for await update in stream {
+            if case .ruleCaptchaRequired(let name, let url, let userAgent) = update {
+                let reason = BlockedSource.Reason.captchaRequired(url: url, userAgent: userAgent)
+                if let index = blockedSources.firstIndex(where: { $0.ruleName == name }) {
+                    blockedSources[index] = BlockedSource(ruleName: name, reason: reason)
+                } else {
+                    blockedSources.append(BlockedSource(ruleName: name, reason: reason))
+                }
+                continue
+            }
+            if case .ruleResults(let name, let results) = update {
+                if let chosen = keywords.lazy.compactMap({ self.bestMatch(in: results, keyword: $0) }).first {
+                    matchesByRule[name] = chosen
+                }
+            }
+        }
+        sources = matchesByRule.values
+            .sorted { $0.ruleName.localizedStandardCompare($1.ruleName) == .orderedAscending }
+            .map(PlayableSource.init)
     }
 
     var selectedSource: PlayableSource? {
@@ -267,6 +326,18 @@ struct PlayerSourceSwitcherPanel: View {
         .task {
             await model.loadSourcesIfNeeded()
         }
+        .sheet(item: Binding(
+            get: { model.activeCaptcha },
+            set: { model.activeCaptcha = $0 }
+        )) { challenge in
+            CaptchaVerificationSheet(
+                url: challenge.url,
+                ruleName: challenge.ruleName,
+                userAgent: challenge.userAgent
+            ) {
+                Task { await model.resolveCaptcha(challenge) }
+            }
+        }
     }
 
     private var header: some View {
@@ -327,6 +398,27 @@ struct PlayerSourceSwitcherPanel: View {
                                     Capsule(style: .continuous)
                                         .stroke(Color.white.opacity(isSelected ? 0.22 : 0.10), lineWidth: 1)
                                 }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    ForEach(model.blockedSources) { blocked in
+                        Button {
+                            model.openCaptcha(for: blocked.ruleName)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "lock.shield")
+                                    .font(.caption2.weight(.bold))
+                                Text(blocked.ruleName)
+                                    .font(.caption.weight(.semibold))
+                            }
+                            .foregroundStyle(.white.opacity(0.55))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 9)
+                            .background(Color.white.opacity(0.04), in: Capsule(style: .continuous))
+                            .overlay {
+                                Capsule(style: .continuous)
+                                    .stroke(Color.white.opacity(0.14), style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
+                            }
                         }
                         .buttonStyle(.plain)
                     }
