@@ -2,6 +2,21 @@ import CoreImage
 import CoreImage.CIFilterBuiltins
 import SwiftUI
 
+/// 规则因反爬策略要求用户解验证码时，UI 拿着它打开 `CaptchaVerificationSheet`。
+public struct CaptchaChallenge: Hashable, Sendable, Identifiable {
+    public let ruleName: String
+    public let url: URL
+    public let userAgent: String
+
+    public var id: String { ruleName }
+
+    public init(ruleName: String, url: URL, userAgent: String) {
+        self.ruleName = ruleName
+        self.url = url
+        self.userAgent = userAgent
+    }
+}
+
 public struct PlayableSource: Hashable, Sendable, Identifiable {
     public let result: SearchResult
 
@@ -74,6 +89,9 @@ public final class DetailViewModel {
     public private(set) var loadingTabs: Set<DetailTab> = []
     public private(set) var tabErrors: [DetailTab: String] = [:]
     public let historyHint: HistoryResumeHint?
+
+    /// 搜索过程中命中验证码的规则集合。UI 弹出 `CaptchaVerificationSheet` 时从这里挑一个。
+    public private(set) var pendingCaptchaChallenges: [CaptchaChallenge] = []
 
     private var rules: [CezzuRule]
     private let api: BangumiAPIClientProtocol
@@ -152,6 +170,17 @@ public final class DetailViewModel {
 
     public func selectRoad(_ index: Int) {
         selectedRoadIndex = index
+    }
+
+    /// 用户在 sheet 里完成了验证，把对应 challenge 从队列里拿掉并触发一次重新搜索。
+    public func resolveCaptcha(_ challenge: CaptchaChallenge) async {
+        pendingCaptchaChallenges.removeAll { $0.ruleName == challenge.ruleName }
+        sources = []
+        await loadSourcesIfNeeded()
+    }
+
+    public func dismissCaptcha(_ challenge: CaptchaChallenge) {
+        pendingCaptchaChallenges.removeAll { $0.ruleName == challenge.ruleName }
     }
 
     public var selectedSource: PlayableSource? {
@@ -270,6 +299,19 @@ public final class DetailViewModel {
         )
         let keywords = searchKeywords
         for await update in stream {
+            if case .ruleCaptchaRequired(let name) = update,
+                let rule = rules.first(where: { $0.name == name }),
+                !pendingCaptchaChallenges.contains(where: { $0.ruleName == name })
+            {
+                pendingCaptchaChallenges.append(
+                    CaptchaChallenge(
+                        ruleName: name,
+                        url: URL(string: rule.baseURL) ?? URL(string: "about:blank")!,
+                        userAgent: rule.userAgent
+                    )
+                )
+                continue
+            }
             if case .ruleResults(let name, let results) = update,
                 matchesByRule[name] == nil
             {
@@ -636,6 +678,22 @@ public struct DetailView: View {
         }
         .task(id: ruleStore.installedRules.count) {
             await model.updateRules(ruleStore.enabledRules())
+        }
+        .sheet(item: Binding(
+            get: { model.pendingCaptchaChallenges.first },
+            set: { newValue in
+                if newValue == nil, let current = model.pendingCaptchaChallenges.first {
+                    model.dismissCaptcha(current)
+                }
+            }
+        )) { challenge in
+            CaptchaVerificationSheet(
+                url: challenge.url,
+                ruleName: challenge.ruleName,
+                userAgent: challenge.userAgent
+            ) {
+                Task { await model.resolveCaptcha(challenge) }
+            }
         }
     }
 

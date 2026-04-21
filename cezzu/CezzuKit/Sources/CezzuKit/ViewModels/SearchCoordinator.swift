@@ -22,6 +22,7 @@ public actor SearchCoordinator: SourceSearchCoordinating {
         case ruleStarted(name: String)
         case ruleResults(name: String, results: [SearchResult])
         case ruleFailed(name: String, message: String)
+        case ruleCaptchaRequired(name: String)
         case finished
     }
 
@@ -103,6 +104,12 @@ public actor SearchCoordinator: SourceSearchCoordinating {
                             timeout: timeout
                         )
                         continuation.yield(.ruleResults(name: rule.name, results: results))
+                    } catch let error as RuleEngineError {
+                        if case .captchaRequired(let ruleName) = error {
+                            continuation.yield(.ruleCaptchaRequired(name: ruleName))
+                        } else {
+                            continuation.yield(.ruleFailed(name: rule.name, message: "\(error)"))
+                        }
                     } catch {
                         continuation.yield(.ruleFailed(name: rule.name, message: "\(error)"))
                     }
@@ -134,6 +141,12 @@ public actor SearchCoordinator: SourceSearchCoordinating {
                             continuation.yield(.ruleResults(name: rule.name, results: results))
                         } catch is CancellationError {
                             // 截止时间到达或外部取消，静默忽略
+                        } catch let error as RuleEngineError {
+                            if case .captchaRequired(let ruleName) = error {
+                                continuation.yield(.ruleCaptchaRequired(name: ruleName))
+                            } else {
+                                continuation.yield(.ruleFailed(name: rule.name, message: "\(error)"))
+                            }
                         } catch {
                             continuation.yield(.ruleFailed(name: rule.name, message: "\(error)"))
                         }
