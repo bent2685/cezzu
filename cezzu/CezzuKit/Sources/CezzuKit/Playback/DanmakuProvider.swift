@@ -14,7 +14,7 @@ enum DanmakuError: LocalizedError, Sendable {
     var errorDescription: String? {
         switch self {
         case .missingCredentials:
-            return "缺少 DanDanPlay 凭证，弹幕不可用。请在 LocalSecrets.xcconfig 中配置 DANDANPLAY_APP_ID / DANDANPLAY_APP_SECRET。"
+            return "缺少DanDanPlay凭证，弹幕暂不可用"
         case .unauthorized(let code):
             return "DanDanPlay 鉴权失败（\(code)），请检查凭证是否正确。"
         case .badResponse(let code):

@@ -200,38 +200,43 @@ struct PlayerDanmakuOverlay: View {
     let playbackRate: Float
     @State private var anchorMediaTime: Double = 0
     @State private var anchorDate: Date = .now
+    @State private var transientErrorMessage: String?
 
     public var body: some View {
         GeometryReader { proxy in
             let size = proxy.size
             let rowHeight = max(18, PlaybackSettings.danmakuFontSize * PlaybackSettings.danmakuLineHeight)
 
-            TimelineView(.periodic(from: .now, by: 1.0 / 60.0)) { context in
-                let renderTime = interpolatedTime(at: context.date)
+            ZStack(alignment: .top) {
+                TimelineView(.periodic(from: .now, by: 1.0 / 60.0)) { context in
+                    let renderTime = interpolatedTime(at: context.date)
 
-                ZStack(alignment: .top) {
-                    ForEach(controller.activeComments) { active in
-                        DanmakuItemView(active: active)
-                            .position(
-                                position(
-                                    for: active,
-                                    in: size,
-                                    rowHeight: rowHeight,
-                                    renderTime: renderTime
+                    ZStack {
+                        ForEach(controller.activeComments) { active in
+                            DanmakuItemView(active: active)
+                                .position(
+                                    position(
+                                        for: active,
+                                        in: size,
+                                        rowHeight: rowHeight,
+                                        renderTime: renderTime
+                                    )
                                 )
-                            )
+                        }
                     }
-
-                    if let loadError = controller.loadError {
-                        DanmakuErrorBanner(message: loadError)
-                            .padding(.top, 12)
-                            .frame(maxWidth: .infinity)
-                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipped()
-                .allowsHitTesting(false)
+
+                if let transientErrorMessage {
+                    DanmakuErrorBanner(message: transientErrorMessage)
+                        .padding(.top, 12)
+                        .frame(maxWidth: .infinity)
+                        .transition(.opacity)
+                }
             }
+            .allowsHitTesting(false)
+            .animation(.easeInOut(duration: 0.25), value: transientErrorMessage)
             .task(id: overlayTaskID(size: size)) {
                 syncAnchor(currentTime: currentTime)
                 controller.update(
@@ -239,6 +244,17 @@ struct PlayerDanmakuOverlay: View {
                     viewportSize: size,
                     playbackRate: playbackRate
                 )
+            }
+            .task(id: controller.loadError) {
+                guard let message = controller.loadError else {
+                    transientErrorMessage = nil
+                    return
+                }
+                transientErrorMessage = message
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                if !Task.isCancelled {
+                    transientErrorMessage = nil
+                }
             }
             .onChange(of: currentTime) { _, newTime in
                 syncAnchor(currentTime: newTime)
