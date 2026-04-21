@@ -20,6 +20,10 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>DanDanPlayAppID</key>
+	<string>$(DANDANPLAY_APP_ID)</string>
+	<key>DanDanPlayAppSecret</key>
+	<string>$(DANDANPLAY_APP_SECRET)</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>NSAppTransportSecurity</key>
