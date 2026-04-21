@@ -52,7 +52,7 @@ final class PlayerDanmakuController {
             debugLog("prepare success: loaded \(comments.count) comments")
         } catch {
             loadedRequestID = nil
-            loadError = "\(error)"
+            loadError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             comments = []
             debugLog("prepare failed: \(error)")
         }
@@ -209,7 +209,7 @@ struct PlayerDanmakuOverlay: View {
             TimelineView(.periodic(from: .now, by: 1.0 / 60.0)) { context in
                 let renderTime = interpolatedTime(at: context.date)
 
-                ZStack {
+                ZStack(alignment: .top) {
                     ForEach(controller.activeComments) { active in
                         DanmakuItemView(active: active)
                             .position(
@@ -220,6 +220,12 @@ struct PlayerDanmakuOverlay: View {
                                     renderTime: renderTime
                                 )
                             )
+                    }
+
+                    if let loadError = controller.loadError {
+                        DanmakuErrorBanner(message: loadError)
+                            .padding(.top, 12)
+                            .frame(maxWidth: .infinity)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -298,6 +304,22 @@ struct PlayerDanmakuOverlay: View {
             ? max(Double(playbackRate), 0.25)
             : 1.0
         return active.duration / rate
+    }
+}
+
+private struct DanmakuErrorBanner: View {
+    let message: String
+
+    var body: some View {
+        Text(message)
+            .font(.caption)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Color.black.opacity(0.6), in: Capsule(style: .continuous))
+            .lineLimit(2)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 16)
     }
 }
 

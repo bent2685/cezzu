@@ -6,6 +6,23 @@ protocol DanmakuProviderProtocol: Sendable {
     func fetchDanmaku(for request: PlaybackRequest) async throws -> [DanmakuComment]
 }
 
+enum DanmakuError: LocalizedError, Sendable {
+    case missingCredentials
+    case unauthorized(statusCode: Int)
+    case badResponse(statusCode: Int)
+
+    var errorDescription: String? {
+        switch self {
+        case .missingCredentials:
+            return "缺少 DanDanPlay 凭证，弹幕不可用。请在 LocalSecrets.xcconfig 中配置 DANDANPLAY_APP_ID / DANDANPLAY_APP_SECRET。"
+        case .unauthorized(let code):
+            return "DanDanPlay 鉴权失败（\(code)），请检查凭证是否正确。"
+        case .badResponse(let code):
+            return "DanDanPlay 请求失败（HTTP \(code)）。"
+        }
+    }
+}
+
 struct DanDanPlayCredentials: Sendable {
     let appID: String
     let appSecret: String
@@ -213,16 +230,22 @@ actor DanmakuProvider: DanmakuProviderProtocol {
     }
 
     private func validate(response: URLResponse) throws {
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+        guard let http = response as? HTTPURLResponse else {
             debugLog("bad server response: \(response)")
-            throw URLError(.badServerResponse)
+            throw DanmakuError.badResponse(statusCode: -1)
         }
+        if (200..<300).contains(http.statusCode) { return }
+        debugLog("bad server response: status=\(http.statusCode)")
+        if http.statusCode == 401 || http.statusCode == 403 {
+            throw DanmakuError.unauthorized(statusCode: http.statusCode)
+        }
+        throw DanmakuError.badResponse(statusCode: http.statusCode)
     }
 
     private func perform(url: URL) async throws -> (Data, URLResponse) {
         guard let credentials else {
             debugLog("missing credentials: set DanDanPlayAppID / DanDanPlayAppSecret in local config")
-            throw URLError(.userAuthenticationRequired)
+            throw DanmakuError.missingCredentials
         }
         let timestamp = Int(Date().timeIntervalSince1970)
         var request = URLRequest(url: url)
