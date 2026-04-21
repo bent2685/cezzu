@@ -10,15 +10,6 @@ struct DanDanPlayCredentials: Sendable {
     let appID: String
     let appSecret: String
 
-    private init(appID: String, appSecret: String) {
-        self.appID = appID
-        self.appSecret = appSecret
-    }
-
-    static func testMake(appID: String, appSecret: String) -> DanDanPlayCredentials {
-        DanDanPlayCredentials(appID: appID, appSecret: appSecret)
-    }
-
     init?(bundle: Bundle = .main, environment: [String: String] = ProcessInfo.processInfo.environment) {
         let infoAppID = (bundle.object(forInfoDictionaryKey: "DanDanPlayAppID") as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -229,23 +220,14 @@ actor DanmakuProvider: DanmakuProviderProtocol {
     }
 
     private func perform(url: URL) async throws -> (Data, URLResponse) {
-        let request = buildRequest(for: url)
-        return try await session.data(for: request)
-    }
-
-    private func buildRequest(for url: URL) -> URLRequest {
+        guard let credentials else {
+            debugLog("missing credentials: set DanDanPlayAppID / DanDanPlayAppSecret in local config")
+            throw URLError(.userAuthenticationRequired)
+        }
+        let timestamp = Int(Date().timeIntervalSince1970)
         var request = URLRequest(url: url)
         request.setValue(RandomUA.next(), forHTTPHeaderField: "User-Agent")
         request.setValue("", forHTTPHeaderField: "Referer")
-
-        guard let credentials else {
-            // 无凭证时走 dandanplay 公开 GET（/bangumi/bgmtv/{id}、/comment/{episodeId}），
-            // 这些接口不强制签名，和 Kazumi / Animeko 的默认行为一致。
-            debugLog("no credentials: using unsigned public GET for path=\(url.path)")
-            return request
-        }
-
-        let timestamp = Int(Date().timeIntervalSince1970)
         request.setValue("1", forHTTPHeaderField: "X-Auth")
         request.setValue(credentials.appID, forHTTPHeaderField: "X-AppId")
         request.setValue(String(timestamp), forHTTPHeaderField: "X-Timestamp")
@@ -256,7 +238,7 @@ actor DanmakuProvider: DanmakuProviderProtocol {
         debugLog(
             "request headers: X-AppId=\(credentials.appID) X-Timestamp=\(timestamp) path=\(url.path)"
         )
-        return request
+        return try await session.data(for: request)
     }
 
     private func signature(path: String, timestamp: Int, credentials: DanDanPlayCredentials) -> String {
@@ -294,10 +276,6 @@ actor DanmakuProvider: DanmakuProviderProtocol {
 extension DanmakuProvider {
     func _testSyntheticEpisodeID(danDanBangumiID: Int, episodeNumber: Int) -> Int {
         syntheticEpisodeID(danDanBangumiID: danDanBangumiID, episodeNumber: episodeNumber)
-    }
-
-    func _testBuildRequest(for url: URL) -> URLRequest {
-        buildRequest(for: url)
     }
 }
 
