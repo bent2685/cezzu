@@ -75,6 +75,32 @@ struct DanmakuProviderTests {
         #expect(value == 17_580_001)
     }
 
+    @Test("request without credentials is unsigned public GET")
+    func requestWithoutCredentialsIsUnsigned() async throws {
+        let provider = DanmakuProvider(credentials: nil)
+        let url = URL(string: "https://api.dandanplay.net/api/v2/comment/17580001?withRelated=true")!
+        let request = await provider._testBuildRequest(for: url)
+
+        #expect(request.value(forHTTPHeaderField: "X-AppId") == nil)
+        #expect(request.value(forHTTPHeaderField: "X-Signature") == nil)
+        #expect(request.value(forHTTPHeaderField: "X-Timestamp") == nil)
+        #expect(request.value(forHTTPHeaderField: "X-Auth") == nil)
+        #expect(request.value(forHTTPHeaderField: "User-Agent") != nil)
+    }
+
+    @Test("request with credentials carries signature headers")
+    func requestWithCredentialsIsSigned() async throws {
+        let credentials = DanDanPlayCredentials.testMake(appID: "app-id", appSecret: "app-secret")
+        let provider = DanmakuProvider(credentials: credentials)
+        let url = URL(string: "https://api.dandanplay.net/api/v2/comment/17580001")!
+        let request = await provider._testBuildRequest(for: url)
+
+        #expect(request.value(forHTTPHeaderField: "X-AppId") == "app-id")
+        #expect(request.value(forHTTPHeaderField: "X-Signature")?.isEmpty == false)
+        #expect(request.value(forHTTPHeaderField: "X-Timestamp")?.isEmpty == false)
+        #expect(request.value(forHTTPHeaderField: "X-Auth") == "1")
+    }
+
     private func makeRule() -> CezzuRule {
         CezzuRule(
             api: "0.1.0",
