@@ -10,8 +10,10 @@ public actor HTTPClient {
     public static let shared = HTTPClient()
 
     private let session: URLSession
+    private let cookieStore: PluginCookieStore
 
-    public init(session: URLSession? = nil) {
+    public init(session: URLSession? = nil, cookieStore: PluginCookieStore = .shared) {
+        self.cookieStore = cookieStore
         if let session {
             self.session = session
         } else {
@@ -30,6 +32,7 @@ public actor HTTPClient {
         var req = URLRequest(url: url)
         req.httpMethod = "GET"
         applyHeaders(to: &req, rule: rule)
+        await applyCookies(to: &req, ruleName: rule.name, url: url)
         return try await perform(req, ruleName: rule.name)
     }
 
@@ -44,10 +47,20 @@ public actor HTTPClient {
         applyHeaders(to: &req, rule: rule)
         req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         req.httpBody = encodeForm(formBody).data(using: .utf8)
+        await applyCookies(to: &req, ruleName: rule.name, url: url)
         return try await perform(req, ruleName: rule.name)
     }
 
     // MARK: - internals
+
+    private func applyCookies(to req: inout URLRequest, ruleName: String, url: URL) async {
+        let cookies = await cookieStore.cookies(for: ruleName, matching: url)
+        guard !cookies.isEmpty else { return }
+        let header = HTTPCookie.requestHeaderFields(with: cookies)
+        for (key, value) in header {
+            req.setValue(value, forHTTPHeaderField: key)
+        }
+    }
 
     private func applyHeaders(to req: inout URLRequest, rule: CezzuRule) {
         let ua = rule.userAgent.isEmpty ? RandomUA.next() : rule.userAgent
