@@ -23,8 +23,15 @@ public struct DanmakuSettingsContent: View {
         PlaybackSettings.danmakuDurationDefault
     @AppStorage(PlaybackSettings.danmakuLineHeightKey) private var danmakuLineHeight: Double =
         PlaybackSettings.danmakuLineHeightDefault
+    @AppStorage(DanmakuProxyStore.useProxyKey) private var useProxy: Bool =
+        DanmakuProxyStore.useProxyDefault
+    @AppStorage(DanmakuProxyStore.proxyURLKey) private var proxyURL: String = ""
 
-    public init() {}
+    private let showsAdvancedOptions: Bool
+
+    public init(showsAdvancedOptions: Bool = false) {
+        self.showsAdvancedOptions = showsAdvancedOptions
+    }
 
     public var body: some View {
         Section {
@@ -80,6 +87,24 @@ public struct DanmakuSettingsContent: View {
             )
         }
         .disabled(!enableDanmaku)
+
+        if showsAdvancedOptions {
+            Section {
+                Toggle("使用弹幕代理", isOn: $useProxy)
+                if useProxy {
+                    TextField("代理地址", text: $proxyURL, prompt: Text("https://your-proxy.example.com"))
+                        .autocorrectionDisabled(true)
+                }
+            } header: {
+                Text("代理")
+            } footer: {
+                if useProxy {
+                    Text("开启并填入你自己的代理域名后，所有 DanDanPlay 请求都通过该代理转发，由代理服务端负责签名。客户端不再发送 AppId / AppSecret。地址为空时该开关不生效。")
+                } else {
+                    Text("默认通过 DanDanPlay 官方 API（api.dandanplay.net）发送请求，使用内置或自定义的 AppId / AppSecret 签名。")
+                }
+            }
+        }
     }
 
     @ViewBuilder

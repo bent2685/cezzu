@@ -140,11 +140,23 @@ actor DanmakuProvider: DanmakuProviderProtocol {
     private let session: URLSession
     private let decoder = JSONDecoder()
     private let credentials: DanDanPlayCredentials?
+    private let proxyBaseURL: URL?
 
-    init(session: URLSession = .shared, credentials: DanDanPlayCredentials? = DanDanPlayCredentials()) {
+    init(
+        session: URLSession = .shared,
+        credentials: DanDanPlayCredentials? = DanDanPlayCredentials(),
+        proxySnapshot: DanmakuProxyStore.Snapshot = DanmakuProxyStore.snapshot()
+    ) {
         self.session = session
         self.credentials = credentials
+        self.proxyBaseURL = proxySnapshot.resolvedBaseURL
     }
+
+    private var apiBaseURL: URL {
+        proxyBaseURL ?? URL(string: "https://api.dandanplay.net")!
+    }
+
+    private var usesProxy: Bool { proxyBaseURL != nil }
 
     func fetchDanmaku(for request: PlaybackRequest) async throws -> [DanmakuComment] {
         let requestSummary =
@@ -186,7 +198,7 @@ actor DanmakuProvider: DanmakuProviderProtocol {
     }
 
     private func fetchDanDanBangumiID(bangumiID: Int) async throws -> Int {
-        guard let url = URL(string: "https://api.dandanplay.net/api/v2/bangumi/bgmtv/\(bangumiID)") else {
+        guard let url = makeURL(path: "/api/v2/bangumi/bgmtv/\(bangumiID)") else {
             return 0
         }
         debugLog("request bangumi mapping: \(url.absoluteString)")
@@ -197,7 +209,7 @@ actor DanmakuProvider: DanmakuProviderProtocol {
     }
 
     private func fetchEpisodeID(bangumiID: Int, episodeNumber: Int) async throws -> Int? {
-        guard let url = URL(string: "https://api.dandanplay.net/api/v2/bangumi/bgmtv/\(bangumiID)") else {
+        guard let url = makeURL(path: "/api/v2/bangumi/bgmtv/\(bangumiID)") else {
             return nil
         }
         debugLog("request episode mapping: \(url.absoluteString)")
@@ -222,9 +234,12 @@ actor DanmakuProvider: DanmakuProviderProtocol {
     }
 
     private func fetchComments(episodeID: Int) async throws -> [DanmakuComment] {
-        var components = URLComponents(string: "https://api.dandanplay.net/api/v2/comment/\(episodeID)")
-        components?.queryItems = [URLQueryItem(name: "withRelated", value: "true")]
-        guard let url = components?.url else { return [] }
+        guard let url = makeURL(
+            path: "/api/v2/comment/\(episodeID)",
+            queryItems: [URLQueryItem(name: "withRelated", value: "true")]
+        ) else {
+            return []
+        }
         debugLog("request comments: \(url.absoluteString)")
 
         let (data, response) = try await perform(url: url)
@@ -254,13 +269,20 @@ actor DanmakuProvider: DanmakuProviderProtocol {
     }
 
     private func perform(url: URL) async throws -> (Data, URLResponse) {
+        var request = URLRequest(url: url)
+        request.setValue(RandomUA.next(), forHTTPHeaderField: "User-Agent")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        if usesProxy {
+            debugLog("proxy request: \(url.absoluteString)")
+            return try await session.data(for: request)
+        }
+
         guard let credentials else {
             debugLog("missing credentials: set DanDanPlayAppID / DanDanPlayAppSecret in local config")
             throw DanmakuError.missingCredentials
         }
         let timestamp = Int(Date().timeIntervalSince1970)
-        var request = URLRequest(url: url)
-        request.setValue(RandomUA.next(), forHTTPHeaderField: "User-Agent")
         request.setValue("", forHTTPHeaderField: "Referer")
         request.setValue("1", forHTTPHeaderField: "X-Auth")
         request.setValue(credentials.appID, forHTTPHeaderField: "X-AppId")
@@ -273,6 +295,19 @@ actor DanmakuProvider: DanmakuProviderProtocol {
             "request headers: X-AppId=\(credentials.appID) X-Timestamp=\(timestamp) path=\(url.path)"
         )
         return try await session.data(for: request)
+    }
+
+    private func makeURL(path: String, queryItems: [URLQueryItem] = []) -> URL? {
+        guard var components = URLComponents(url: apiBaseURL, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
+        let basePath = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let joinedPath = basePath.isEmpty ? path : "/\(basePath)\(path)"
+        components.path = joinedPath
+        if !queryItems.isEmpty {
+            components.queryItems = queryItems
+        }
+        return components.url
     }
 
     private func signature(path: String, timestamp: Int, credentials: DanDanPlayCredentials) -> String {

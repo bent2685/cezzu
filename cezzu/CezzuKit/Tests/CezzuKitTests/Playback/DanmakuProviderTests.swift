@@ -126,6 +126,33 @@ struct DanmakuProviderTests {
         #expect(credentials?.appSecret == "builtin-secret")
     }
 
+    @Test("proxy snapshot resolves valid https URL")
+    func proxySnapshotResolvesValidURL() {
+        let snapshot = DanmakuProxyStore.Snapshot(
+            useProxy: true,
+            proxyURL: "https://proxy.example.com/"
+        )
+        #expect(snapshot.resolvedBaseURL?.absoluteString == "https://proxy.example.com")
+    }
+
+    @Test("proxy snapshot returns nil when toggle is off")
+    func proxySnapshotDisabled() {
+        let snapshot = DanmakuProxyStore.Snapshot(
+            useProxy: false,
+            proxyURL: "https://proxy.example.com"
+        )
+        #expect(snapshot.resolvedBaseURL == nil)
+    }
+
+    @Test("proxy snapshot rejects malformed URLs")
+    func proxySnapshotRejectsMalformed() {
+        let cases = ["", "   ", "not-a-url", "ftp://example.com", "http://"]
+        for raw in cases {
+            let snapshot = DanmakuProxyStore.Snapshot(useProxy: true, proxyURL: raw)
+            #expect(snapshot.resolvedBaseURL == nil, "should reject \(raw)")
+        }
+    }
+
     @Test("credentials init returns nil when no source provides values")
     func credentialsNilWhenNothingConfigured() {
         let snapshot = DanDanPlayCredentialsStore.Snapshot(useCustom: false, appID: "", appSecret: "")

@@ -29,7 +29,7 @@ public struct SettingsView: View {
             Section("弹幕") {
                 NavigationLink {
                     Form {
-                        DanmakuSettingsContent()
+                        DanmakuSettingsContent(showsAdvancedOptions: true)
                     }
                     .formStyle(.grouped)
                     .navigationTitle("弹幕设置")
