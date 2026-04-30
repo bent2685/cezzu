@@ -98,6 +98,16 @@ git push origin v0.1.0-rc.1
 
 tag 名包含预发布后缀（例如 `-rc.1` / `-alpha.1`）时，GitHub Release 会自动标记为 prerelease。
 
+### Release notes
+
+如果需要手写 release note，在推 tag 前创建同名 Markdown 文件：
+
+```text
+.github/release-notes/v0.1.0-rc.1.md
+```
+
+workflow 会优先使用 `.github/release-notes/${TAG}.md` 作为 GitHub Release 正文；文件不存在时回落到 GitHub 自动生成的 release notes。
+
 ## 本地 Release 流程
 
 1. 更新 `version.json` 中的版本号

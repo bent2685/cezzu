@@ -104,13 +104,19 @@ jobs:
 
       - name: Publish GitHub Release
         run: |
+          notes_file=".github/release-notes/${RELEASE_TAG}.md"
           args=(
             "$RELEASE_TAG"
             dist/*
             --title "$RELEASE_TAG"
-            --generate-notes
             --verify-tag
           )
+
+          if [[ -f "$notes_file" ]]; then
+            args+=(--notes-file "$notes_file")
+          else
+            args+=(--generate-notes)
+          fi
 
           if [[ "$RELEASE_TAG" == *"-"* ]]; then
             args+=(--prerelease)
