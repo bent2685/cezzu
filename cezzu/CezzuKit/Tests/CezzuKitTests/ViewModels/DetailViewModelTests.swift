@@ -13,6 +13,15 @@ struct DetailViewModelTests {
             fetchStarted = true
         }
 
+        func waitForFetchStarted(timeout: Duration) async -> Bool {
+            let clock = ContinuousClock()
+            let deadline = clock.now + timeout
+            while !fetchStarted, clock.now < deadline {
+                try? await Task.sleep(for: .milliseconds(10))
+            }
+            return fetchStarted
+        }
+
         func recordSearchFinish() {
             fetchStartedBeforeSearchFinished = fetchStarted
         }
@@ -118,7 +127,7 @@ struct DetailViewModelTests {
                 Task {
                     continuation.yield(.ruleStarted(name: result.ruleName))
                     continuation.yield(.ruleResults(name: result.ruleName, results: [result]))
-                    try? await Task.sleep(for: .milliseconds(25))
+                    _ = await probe.waitForFetchStarted(timeout: .seconds(1))
                     await probe.recordSearchFinish()
                     continuation.yield(.finished)
                     continuation.finish()
@@ -135,7 +144,7 @@ struct DetailViewModelTests {
                 Task {
                     continuation.yield(.ruleStarted(name: result.ruleName))
                     continuation.yield(.ruleResults(name: result.ruleName, results: [result]))
-                    try? await Task.sleep(for: .milliseconds(25))
+                    _ = await probe.waitForFetchStarted(timeout: .seconds(1))
                     await probe.recordSearchFinish()
                     continuation.yield(.finished)
                     continuation.finish()
