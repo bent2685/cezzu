@@ -1,10 +1,10 @@
 {
   "ios": {
-    "version": "0.1.0-alpha.6",
-    "build": 6
+    "version": "0.1.0",
+    "build": 7
   },
   "macos": {
-    "version": "0.1.0-alpha.6",
-    "build": 6
+    "version": "0.1.0",
+    "build": 7
   }
 }

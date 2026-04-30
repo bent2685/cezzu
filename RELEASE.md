@@ -19,6 +19,8 @@
 
 改版本号时只需编辑此文件。构建脚本会自动通过 `scripts/sync_version.sh` 将版本同步到 Xcode 工程。
 
+`version` 会进入 `CFBundleShortVersionString`，必须使用 `0.1.0` 这种三段数字版本。`rc` / `alpha` / `beta` 等预发布标识只放在 Git tag 和 GitHub Release 名称里，例如 tag `v0.1.0-rc.1` 对应 `version.json` 里的 `0.1.0`。
+
 ### 手动同步（开发时）
 
 如果你在 Xcode 里开发（不跑 release 脚本），改完 `version.json` 后需要手动同步一次：
@@ -66,7 +68,37 @@ dist/
 
 iOS IPA **未签名**，需通过 AltStore / Sideloadly 等工具自签安装。
 
-## 完整 Release 流程
+## GitHub Actions Release 流程
+
+Release workflow 位于 `.github/workflows/release.yml`，推送 `v*` tag 时自动运行：
+
+1. 校验 tag 基础版本与 `version.json` 一致
+2. 从 GitHub Secrets 生成 `cezzu/LocalSecrets.xcconfig`
+3. 安装 XcodeGen
+4. 运行 `swift test`
+5. 调用本地 `scripts/release_macos.sh` 和 `scripts/release_ios.sh`
+6. 上传 `dist/*` 到 GitHub Release
+
+需要在 GitHub 仓库 Settings → Secrets and variables → Actions 中配置：
+
+| Secret | 用途 |
+|---|---|
+| `DANDANPLAY_APP_ID` | 生成 `DANDANPLAY_APP_ID` Xcode build setting |
+| `DANDANPLAY_APP_SECRET` | 生成 `DANDANPLAY_APP_SECRET` Xcode build setting |
+
+缺少任一 Secret 时，workflow 会失败，避免发布空凭据构建。
+
+发布 `v0.1.0-rc.1`：
+
+```bash
+# version.json 中 iOS/macOS version 应为 0.1.0，build 应递增
+git tag v0.1.0-rc.1
+git push origin v0.1.0-rc.1
+```
+
+tag 名包含预发布后缀（例如 `-rc.1` / `-alpha.1`）时，GitHub Release 会自动标记为 prerelease。
+
+## 本地 Release 流程
 
 1. 更新 `version.json` 中的版本号
 2. 运行构建脚本

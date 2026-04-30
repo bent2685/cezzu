@@ -104,6 +104,8 @@ build_variant() {
     "$DIST_DIR/$DMG_NAME" \
     -quiet
 
+  rm -rf "$ARCHIVE_PATH" "$APP_STAGE"
+
   echo "  -> $DMG_NAME"
 }
 
