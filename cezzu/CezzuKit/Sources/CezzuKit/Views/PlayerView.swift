@@ -6,6 +6,8 @@ import SwiftUI
 public struct PlayerView: View {
     @AppStorage(PlaybackSettings.enableDanmakuKey) private var enableDanmaku: Bool =
         PlaybackSettings.enableDanmakuDefault
+    @AppStorage(PlaybackSettings.superResolutionModeKey) private var superResolutionRawMode: String =
+        PlaybackSettings.superResolutionModeDefault.rawValue
     @State private var coordinator: PlaybackCoordinator
     @State private var activeRequest: PlaybackRequest
     @State private var danmakuController = PlayerDanmakuController()
@@ -63,7 +65,8 @@ public struct PlayerView: View {
         ZStack(alignment: .bottom) {
             PlayerSurface(
                 player: coordinator.backend.player,
-                pictureInPictureController: pictureInPictureController
+                pictureInPictureController: pictureInPictureController,
+                superResolutionMode: superResolutionMode
             )
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
@@ -282,6 +285,44 @@ public struct PlayerView: View {
         .sheet(isPresented: $isDanmakuSettingsPresented) {
             PlayerDanmakuSettingsSheet()
         }
+    }
+
+    private var superResolutionMode: SuperResolutionMode {
+        SuperResolutionMode(rawValue: superResolutionRawMode)
+            ?? PlaybackSettings.superResolutionModeDefault
+    }
+
+    @ViewBuilder
+    private func superResolutionMenuButton(size: CGFloat = 44, font: Font = .headline) -> some View {
+        let device = SuperResolutionCapability.defaultDevice
+        Menu {
+            Section("超分辨率") {
+                ForEach(SuperResolutionMode.allCases, id: \.self) { mode in
+                    let supported = SuperResolutionCapability.isSupported(mode, on: device)
+                    Button {
+                        guard supported else { return }
+                        superResolutionRawMode = mode.rawValue
+                        revealControlsTemporarily()
+                    } label: {
+                        if superResolutionMode == mode {
+                            Label(mode.displayName, systemImage: "checkmark")
+                        } else {
+                            Text(mode.displayName)
+                        }
+                    }
+                    .disabled(!supported)
+                }
+            }
+        } label: {
+            iconControlButtonLabel(
+                systemImage: superResolutionMode == .off ? "wand.and.stars.inverse" : "wand.and.stars",
+                size: size,
+                font: font
+            )
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
     }
 
     // MARK: - loading overlay
@@ -521,6 +562,7 @@ public struct PlayerView: View {
                         revealControlsTemporarily()
                     }
                 }
+                superResolutionMenuButton()
                 speedMenuButton
                 if interaction.showsFullscreenToggle {
                     iconControlButton(
@@ -550,6 +592,7 @@ public struct PlayerView: View {
                     revealControlsTemporarily()
                 }
             }
+            superResolutionMenuButton(size: 40, font: .title3)
             speedMenuButton
             if interaction.showsFullscreenToggle {
                 iconControlButton(
