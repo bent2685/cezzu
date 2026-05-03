@@ -26,6 +26,32 @@ struct PlaybackSettingsTests {
         )
     }
 
+    @Test("super resolution mode defaults to off and round-trips through Store")
+    func superResolutionModeRoundTrip() {
+        resetStore()
+        var store = makeStore()
+        #expect(store.superResolutionMode == PlaybackSettings.superResolutionModeDefault)
+        #expect(store.superResolutionMode == .off)
+
+        store.superResolutionMode = .quality
+        let persisted = makeStore()
+        #expect(persisted.superResolutionMode == .quality)
+
+        store.superResolutionMode = .efficiency
+        let again = makeStore()
+        #expect(again.superResolutionMode == .efficiency)
+    }
+
+    @Test("super resolution mode falls back to default when stored raw is invalid")
+    func superResolutionModeInvalidRawValue() {
+        resetStore()
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.set("garbage-mode", forKey: PlaybackSettings.superResolutionModeKey)
+
+        let store = PlaybackSettings.Store(defaults: defaults)
+        #expect(store.superResolutionMode == PlaybackSettings.superResolutionModeDefault)
+    }
+
     @Test("danmaku settings persist written values")
     func danmakuSettingsPersistence() {
         resetStore()

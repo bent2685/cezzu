@@ -14,9 +14,11 @@ public enum PlaybackSettings {
     public static let showBottomDanmakuKey = "cezzu.playback.showBottomDanmaku"
     public static let showScrollDanmakuKey = "cezzu.playback.showScrollDanmaku"
     public static let followPlaybackRateDanmakuKey = "cezzu.playback.followPlaybackRateDanmaku"
+    public static let superResolutionModeKey = "cezzu.playback.superResolutionMode"
 
     /// 默认值。
     public static let enableLocalProxyDefault = true
+    public static let superResolutionModeDefault: SuperResolutionMode = .off
     public static let enableDanmakuDefault = true
     public static let danmakuFontSizeDefault = 22.0
     public static let danmakuOpacityDefault = 1.0
@@ -133,6 +135,20 @@ public enum PlaybackSettings {
             }
             set {
                 defaults.set(newValue, forKey: PlaybackSettings.followPlaybackRateDanmakuKey)
+            }
+        }
+
+        var superResolutionMode: SuperResolutionMode {
+            get {
+                guard let raw = defaults.string(forKey: PlaybackSettings.superResolutionModeKey),
+                      let mode = SuperResolutionMode(rawValue: raw)
+                else {
+                    return PlaybackSettings.superResolutionModeDefault
+                }
+                return mode
+            }
+            set {
+                defaults.set(newValue.rawValue, forKey: PlaybackSettings.superResolutionModeKey)
             }
         }
 
@@ -259,6 +275,16 @@ public enum PlaybackSettings {
         set {
             var store = Store(defaults: .standard)
             store.followPlaybackRateDanmaku = newValue
+        }
+    }
+
+    public static var superResolutionMode: SuperResolutionMode {
+        get {
+            Store(defaults: .standard).superResolutionMode
+        }
+        set {
+            var store = Store(defaults: .standard)
+            store.superResolutionMode = newValue
         }
     }
 }
