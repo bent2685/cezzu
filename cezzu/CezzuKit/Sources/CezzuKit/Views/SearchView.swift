@@ -8,7 +8,6 @@ public struct SearchView: View {
     @State private var advancedExpanded: Bool = false
     @State private var newTagDraft: String = ""
     @FocusState private var isNewTagFocused: Bool
-    @State private var customYearExpanded: Bool = false
 
     /// 历史下拉一次最多显示多少条。
     private static let historyDropdownLimit: Int = 8
@@ -222,62 +221,18 @@ public struct SearchView: View {
     @ViewBuilder
     private var yearFilterRow: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("年份范围")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text(yearRangeSummary)
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.primary)
-            }
+            Text("年份范围")
+                .font(.caption)
+                .foregroundStyle(.secondary)
             FlowLayout(horizontalSpacing: 6, verticalSpacing: 6) {
                 ForEach(yearPresets, id: \.id) { preset in
                     yearChip(title: preset.title, isSelected: preset.matches(min: model.yearMin, max: model.yearMax)) {
                         model.yearMin = preset.min
                         model.yearMax = preset.max
                         model.advancedFilterChanged()
-                        if !preset.isCustom {
-                            customYearExpanded = false
-                        }
                     }
                 }
-                yearChip(title: "自定义", isSelected: isCustomYearSelected) {
-                    customYearExpanded.toggle()
-                }
             }
-            if customYearExpanded {
-                HStack(spacing: 12) {
-                    yearStepper(title: "起", value: Binding(
-                        get: { model.yearMin },
-                        set: { model.yearMin = $0; model.advancedFilterChanged() }
-                    ))
-                    Text("—")
-                        .foregroundStyle(.secondary)
-                    yearStepper(title: "止", value: Binding(
-                        get: { model.yearMax },
-                        set: { model.yearMax = $0; model.advancedFilterChanged() }
-                    ))
-                    Spacer()
-                }
-                .padding(.top, 4)
-            }
-        }
-    }
-
-    /// 当前 (yearMin, yearMax) 不是"不限"且不命中任何 preset 时视为自定义。
-    private var isCustomYearSelected: Bool {
-        guard model.yearMin != nil || model.yearMax != nil else { return false }
-        return !yearPresets.contains { $0.matches(min: model.yearMin, max: model.yearMax) }
-    }
-
-    private var yearRangeSummary: String {
-        switch (model.yearMin, model.yearMax) {
-        case (nil, nil): return "不限"
-        case let (min?, nil): return "≥ \(min)"
-        case let (nil, max?): return "≤ \(max)"
-        case let (min?, max?) where min == max: return "\(min)"
-        case let (min?, max?): return "\(min) – \(max)"
         }
     }
 
@@ -313,42 +268,11 @@ public struct SearchView: View {
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
-    @ViewBuilder
-    private func yearStepper(title: String, value: Binding<Int?>) -> some View {
-        let display = value.wrappedValue.map(String.init) ?? "不限"
-        HStack(spacing: 6) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text(display)
-                .font(.caption.monospacedDigit())
-                .frame(minWidth: 36, alignment: .leading)
-            Stepper("", value: Binding(
-                get: { value.wrappedValue ?? 0 },
-                set: { newValue in
-                    value.wrappedValue = newValue == 0 ? nil : newValue
-                }
-            ), in: 0...3000, step: 1)
-            .labelsHidden()
-            if value.wrappedValue != nil {
-                Button {
-                    value.wrappedValue = nil
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
     private struct YearPreset {
         let id: String
         let title: String
         let min: Int?
         let max: Int?
-
-        var isCustom: Bool { false }
 
         func matches(min current: Int?, max currentMax: Int?) -> Bool {
             current == min && currentMax == max
