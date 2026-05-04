@@ -4,6 +4,10 @@ import SwiftUI
 public struct SearchView: View {
     @Bindable var model: SearchViewModel
     var onTapItem: (BangumiItem) -> Void
+    @FocusState private var isInputFocused: Bool
+
+    /// 历史下拉一次最多显示多少条。
+    private static let historyDropdownLimit: Int = 8
 
     public init(model: SearchViewModel, onTapItem: @escaping (BangumiItem) -> Void) {
         self.model = model
@@ -38,17 +42,43 @@ public struct SearchView: View {
         GlassPanel {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 12) {
-                    TextField("番剧名", text: $model.text)
-                        .textFieldStyle(.plain)
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 14)
-                        .glassBackground(in: Capsule())
-                        .onSubmit {
-                            Task { await model.submit() }
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundStyle(.secondary)
+                        TextField("番剧名", text: $model.text)
+                            .textFieldStyle(.plain)
+                            .focused($isInputFocused)
+                            .submitLabel(.search)
+                            .onSubmit {
+                                isInputFocused = false
+                                Task { await model.submit() }
+                            }
+                            .onChange(of: model.text) { _, _ in
+                                model.textChanged()
+                            }
+                        if !model.text.isEmpty {
+                            Button {
+                                model.clearText()
+                                isInputFocused = true
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("清空输入")
                         }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .glassBackground(in: Capsule())
+
                     GlassPrimaryButton("搜索", systemImage: "magnifyingglass") {
+                        isInputFocused = false
                         Task { await model.submit() }
                     }
+                }
+                if shouldShowHistory {
+                    historyDropdown
                 }
                 if let selectedTag = model.selectedTag {
                     HStack(spacing: 8) {
@@ -76,8 +106,76 @@ public struct SearchView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+                .onChange(of: model.selectedSort) { _, _ in
+                    model.sortChanged()
+                }
             }
         }
+    }
+
+    private var shouldShowHistory: Bool {
+        let trimmed = model.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return isInputFocused
+            && trimmed.isEmpty
+            && !model.historyKeywords.isEmpty
+    }
+
+    @ViewBuilder
+    private var historyDropdown: some View {
+        let keywords = Array(model.historyKeywords.prefix(Self.historyDropdownLimit))
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Label("最近搜索", systemImage: "clock.arrow.circlepath")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("清空") {
+                    model.clearHistory()
+                }
+                .buttonStyle(.plain)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+
+            ForEach(Array(keywords.enumerated()), id: \.element) { index, keyword in
+                if index > 0 {
+                    Divider()
+                        .padding(.leading, 36)
+                }
+                Button {
+                    isInputFocused = false
+                    Task { await model.applyHistory(keyword) }
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundStyle(.secondary)
+                            .frame(width: 16)
+                        Text(keyword)
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .foregroundStyle(.primary)
+                        Button {
+                            model.deleteHistory(keyword)
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .padding(6)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("删除“\(keyword)”")
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .glassBackground(in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     @ViewBuilder
@@ -102,13 +200,36 @@ public struct SearchView: View {
                     .foregroundStyle(.secondary)
             }
         } else if !model.results.isEmpty {
-            resultsGrid
+            VStack(alignment: .leading, spacing: 12) {
+                resultsHeader
+                resultsGrid
+            }
         } else {
             GlassPanel {
                 Text("输入关键字后开始搜索。")
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    @ViewBuilder
+    private var resultsHeader: some View {
+        HStack(spacing: 8) {
+            Text(resultsCountText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+            if model.isSearching || model.isLoadingMore {
+                ProgressView()
+                    .controlSize(.small)
+            }
+        }
+        .padding(.horizontal, 4)
+    }
+
+    private var resultsCountText: String {
+        let suffix = model.hasMore ? "+" : ""
+        return "共找到 \(model.results.count)\(suffix) 条结果"
     }
 
     @ViewBuilder
