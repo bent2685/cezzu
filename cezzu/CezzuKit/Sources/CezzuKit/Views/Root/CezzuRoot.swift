@@ -16,6 +16,7 @@ public struct CezzuRoot: View {
             .environment(session.store)
             .environment(session.history)
             .environment(session.followStore)
+            .environment(session.searchHistory)
             .task {
                 guard !didInitializePersistentSession else { return }
                 didInitializePersistentSession = true
@@ -30,17 +31,20 @@ public struct CezzuRoot: View {
     private func initialize() async {
         do {
             let container = try ModelContainer(
-                for: WatchHistoryEntry.self, FollowEntry.self, RuleSourceRecord.self
+                for: WatchHistoryEntry.self, FollowEntry.self, RuleSourceRecord.self,
+                SearchHistoryEntry.self
             )
             let context = container.mainContext
             let sourceStore = RuleSourceStore(context: context)
             let store = RuleStoreCoordinator(sourceStore: sourceStore)
             let history = HistoryStore(context: context)
             let followStore = FollowStore(context: context)
+            let searchHistory = SearchHistoryStore(context: context)
             session = CezzuSession(
                 store: store,
                 history: history,
                 followStore: followStore,
+                searchHistory: searchHistory,
                 container: container,
                 shouldBootstrapAtLaunch: true
             )
@@ -57,6 +61,7 @@ public final class CezzuSession {
     public let store: RuleStoreCoordinator
     public let history: HistoryStore
     public let followStore: FollowStore
+    public let searchHistory: SearchHistoryStore
     public let container: ModelContainer?
     public let bangumiAPI: BangumiAPIClientProtocol
     public let shouldBootstrapAtLaunch: Bool
@@ -65,6 +70,7 @@ public final class CezzuSession {
         store: RuleStoreCoordinator,
         history: HistoryStore,
         followStore: FollowStore,
+        searchHistory: SearchHistoryStore,
         container: ModelContainer?,
         bangumiAPI: BangumiAPIClientProtocol = BangumiAPIClient.shared,
         shouldBootstrapAtLaunch: Bool = true
@@ -72,6 +78,7 @@ public final class CezzuSession {
         self.store = store
         self.history = history
         self.followStore = followStore
+        self.searchHistory = searchHistory
         self.container = container
         self.bangumiAPI = bangumiAPI
         self.shouldBootstrapAtLaunch = shouldBootstrapAtLaunch
@@ -82,6 +89,7 @@ public final class CezzuSession {
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
         guard let container = try? ModelContainer(
             for: WatchHistoryEntry.self, FollowEntry.self, RuleSourceRecord.self,
+            SearchHistoryEntry.self,
             configurations: config
         ) else {
             preconditionFailure("failed to create in-memory ModelContainer for CezzuSession.empty()")
@@ -91,10 +99,12 @@ public final class CezzuSession {
         let store = RuleStoreCoordinator(sourceStore: sourceStore)
         let history = HistoryStore(context: context)
         let followStore = FollowStore(context: context)
+        let searchHistory = SearchHistoryStore(context: context)
         return CezzuSession(
             store: store,
             history: history,
             followStore: followStore,
+            searchHistory: searchHistory,
             container: container,
             shouldBootstrapAtLaunch: false
         )
@@ -144,7 +154,10 @@ struct CompactRootView: View {
     init(session: CezzuSession) {
         self.session = session
         self._searchModel = State(
-            initialValue: SearchViewModel(api: session.bangumiAPI)
+            initialValue: SearchViewModel(
+                api: session.bangumiAPI,
+                history: session.searchHistory
+            )
         )
         self._homeModel = State(
             initialValue: HomeViewModel(api: session.bangumiAPI)
@@ -376,7 +389,10 @@ struct SplitRootView: View {
     init(session: CezzuSession) {
         self.session = session
         self._searchModel = State(
-            initialValue: SearchViewModel(api: session.bangumiAPI)
+            initialValue: SearchViewModel(
+                api: session.bangumiAPI,
+                history: session.searchHistory
+            )
         )
         self._homeModel = State(
             initialValue: HomeViewModel(api: session.bangumiAPI)
