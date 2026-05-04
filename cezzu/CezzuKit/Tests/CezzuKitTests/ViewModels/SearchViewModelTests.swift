@@ -229,7 +229,6 @@ struct SearchViewModelTests {
         vm.ratingMin = 8.0
         vm.yearMin = 2020
         vm.yearMax = 2023
-        vm.includeNSFW = true
 
         await vm.submit()
 
@@ -278,7 +277,6 @@ struct SearchViewModelTests {
         vm.text = "海贼王"
         vm.selectedTags = ["校园"]
         vm.ratingMin = 7.5
-        vm.includeNSFW = false
         await vm.submit()
 
         vm.resetAdvancedFilter()
@@ -286,7 +284,6 @@ struct SearchViewModelTests {
 
         #expect(vm.selectedTags.isEmpty)
         #expect(vm.ratingMin == nil)
-        #expect(vm.includeNSFW == true)
         #expect(api.keywordSearchCalls.count == 2)
         #expect(api.keywordSearchFilters.last?.tags.isEmpty == true)
         #expect(api.keywordSearchFilters.last?.includeNSFW == true)

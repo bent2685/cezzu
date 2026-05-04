@@ -102,8 +102,6 @@ public struct SearchView: View {
                 ratingFilterRow
                 Divider().opacity(0.5)
                 yearFilterRow
-                Divider().opacity(0.5)
-                nsfwFilterRow
                 if model.hasActiveAdvancedFilter {
                     Button {
                         model.resetAdvancedFilter()
@@ -288,36 +286,6 @@ public struct SearchView: View {
 
         func matches(min current: Int?, max currentMax: Int?) -> Bool {
             current == min && currentMax == max
-        }
-    }
-
-    @ViewBuilder
-    private var nsfwFilterRow: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            sectionLabel("内容偏好")
-            HStack(spacing: 8) {
-                Text("包含 R18 内容")
-                    .font(.subheadline)
-                Text(model.includeNSFW ? "默认开启" : "已过滤")
-                    .font(.caption2.weight(.medium))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .glassBackground(
-                        in: Capsule(),
-                        tint: model.includeNSFW ? Color.accentColor.opacity(0.22) : Color.secondary.opacity(0.18)
-                    )
-                Spacer(minLength: 12)
-                Toggle("", isOn: Binding(
-                    get: { model.includeNSFW },
-                    set: { newValue in
-                        model.includeNSFW = newValue
-                        model.advancedFilterChanged()
-                    }
-                ))
-                .labelsHidden()
-                .tint(.accentColor)
-            }
-            .padding(.trailing, 4)
         }
     }
 
