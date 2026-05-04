@@ -96,10 +96,13 @@ public struct SearchView: View {
     @ViewBuilder
     private var advancedFilterSection: some View {
         DisclosureGroup(isExpanded: $advancedExpanded) {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 14) {
                 tagFilterRow
+                Divider().opacity(0.5)
                 ratingFilterRow
+                Divider().opacity(0.5)
                 yearFilterRow
+                Divider().opacity(0.5)
                 nsfwFilterRow
                 if model.hasActiveAdvancedFilter {
                     Button {
@@ -110,31 +113,41 @@ public struct SearchView: View {
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
+                    .padding(.top, 2)
                 }
             }
-            .padding(.top, 8)
+            .padding(.top, 10)
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "slider.horizontal.3")
+                    .foregroundStyle(.secondary)
                 Text("高级筛选")
                 if model.hasActiveAdvancedFilter {
                     Text("已启用")
-                        .font(.caption2.weight(.medium))
-                        .padding(.horizontal, 6)
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 7)
                         .padding(.vertical, 2)
-                        .glassBackground(in: Capsule(), tint: .accentColor.opacity(0.22))
+                        .glassBackground(in: Capsule(), tint: .accentColor.opacity(0.28))
                 }
+                Spacer()
             }
             .font(.subheadline.weight(.medium))
         }
     }
 
     @ViewBuilder
+    private func sectionLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.caption2.weight(.semibold))
+            .tracking(0.6)
+            .foregroundStyle(.secondary)
+            .textCase(.uppercase)
+    }
+
+    @ViewBuilder
     private var tagFilterRow: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("标签")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            sectionLabel("标签")
             if !model.selectedTags.isEmpty {
                 FlowLayout(horizontalSpacing: 6, verticalSpacing: 6) {
                     ForEach(model.selectedTags, id: \.self) { tag in
@@ -201,25 +214,23 @@ public struct SearchView: View {
             }
         )
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("最低评分")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            HStack(alignment: .firstTextBaseline) {
+                sectionLabel("最低评分")
                 Spacer()
                 Text(model.ratingMin.map { String(format: "≥ %.1f", $0) } ?? "不限")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.primary)
+                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(model.ratingMin == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.accentColor))
+                    .contentTransition(.numericText())
             }
             Slider(value: binding, in: 0...10, step: 0.5)
+                .tint(.accentColor)
         }
     }
 
     @ViewBuilder
     private var yearFilterRow: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("年份范围")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            sectionLabel("年份范围")
             FlowLayout(horizontalSpacing: 6, verticalSpacing: 6) {
                 ForEach(yearPresets, id: \.id) { preset in
                     yearChip(title: preset.title, isSelected: preset.matches(min: model.yearMin, max: model.yearMax)) {
@@ -251,12 +262,13 @@ public struct SearchView: View {
     private func yearChip(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.caption.weight(.medium))
-                .padding(.horizontal, 10)
+                .font(.caption.weight(isSelected ? .semibold : .medium))
+                .foregroundStyle(isSelected ? AnyShapeStyle(Color.white) : AnyShapeStyle(.primary))
+                .padding(.horizontal, 11)
                 .padding(.vertical, 6)
                 .glassBackground(
                     in: Capsule(),
-                    tint: isSelected ? Color.accentColor.opacity(0.28) : Color.clear
+                    tint: isSelected ? Color.accentColor.opacity(0.85) : Color.secondary.opacity(0.12)
                 )
         }
         .buttonStyle(.plain)
@@ -277,20 +289,29 @@ public struct SearchView: View {
 
     @ViewBuilder
     private var nsfwFilterRow: some View {
-        Toggle(isOn: Binding(
-            get: { model.includeNSFW },
-            set: { newValue in
-                model.includeNSFW = newValue
-                model.advancedFilterChanged()
+        VStack(alignment: .leading, spacing: 6) {
+            sectionLabel("内容偏好")
+            Toggle(isOn: Binding(
+                get: { model.includeNSFW },
+                set: { newValue in
+                    model.includeNSFW = newValue
+                    model.advancedFilterChanged()
+                }
+            )) {
+                HStack(spacing: 6) {
+                    Text("包含 R18 内容")
+                        .font(.subheadline)
+                    Text(model.includeNSFW ? "默认开启" : "已过滤")
+                        .font(.caption2.weight(.medium))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .glassBackground(
+                            in: Capsule(),
+                            tint: model.includeNSFW ? Color.accentColor.opacity(0.22) : Color.secondary.opacity(0.18)
+                        )
+                }
             }
-        )) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("包含 R18 内容")
-                    .font(.subheadline)
-                Text("关闭时不会返回 NSFW 番剧。")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
+            .tint(.accentColor)
         }
     }
 
