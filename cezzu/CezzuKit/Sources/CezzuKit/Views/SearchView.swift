@@ -357,34 +357,33 @@ public struct SearchView: View {
     @ViewBuilder
     private var content: some View {
         if model.isSearching && model.results.isEmpty {
-            GlassPanel {
-                ProgressView("搜索中…")
-            }
+            BangumiSkeletonGrid()
         } else if let error = model.lastError, model.results.isEmpty {
-            GlassPanel {
-                VStack(alignment: .leading, spacing: 10) {
-                    Label("搜索失败", systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.orange)
-                    Text(error.userMessage)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
+            EmptyStateView(
+                systemImage: "wifi.exclamationmark",
+                title: "搜索失败",
+                message: error.userMessage,
+                tone: .warning,
+                actionTitle: "重试",
+                action: { Task { await model.submit() } }
+            )
         } else if model.hasSearched && model.results.isEmpty {
-            GlassPanel {
-                Text("没有找到匹配的番剧。")
-                    .foregroundStyle(.secondary)
-            }
+            EmptyStateView(
+                systemImage: "magnifyingglass",
+                title: "没有找到匹配的番剧",
+                message: "试试换个关键词，或调整下高级筛选。"
+            )
         } else if !model.results.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
                 resultsHeader
                 resultsGrid
             }
         } else {
-            GlassPanel {
-                Text("输入关键字后开始搜索。")
-                    .foregroundStyle(.secondary)
-            }
+            EmptyStateView(
+                systemImage: "sparkle.magnifyingglass",
+                title: "开始搜索吧",
+                message: "输入番剧名，或在高级筛选里挑标签 / 评分 / 年代。"
+            )
         }
     }
 
@@ -395,10 +394,6 @@ public struct SearchView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Spacer()
-            if model.isSearching || model.isLoadingMore {
-                ProgressView()
-                    .controlSize(.small)
-            }
         }
         .padding(.horizontal, 4)
     }
@@ -418,9 +413,8 @@ public struct SearchView: View {
             }
         ) {
             if model.isLoadingMore {
-                GlassPanel {
-                    ProgressView("加载更多中…")
-                }
+                BangumiSkeletonGrid(placeholderCount: 4)
+                    .padding(.top, 4)
             }
         }
     }

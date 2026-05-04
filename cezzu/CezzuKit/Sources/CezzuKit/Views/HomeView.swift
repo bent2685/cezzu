@@ -26,24 +26,24 @@ public struct HomeView: View {
             LazyVStack(alignment: .leading, spacing: 16) {
                 header
                 if model.isLoading && model.items.isEmpty {
-                    GlassPanel { ProgressView("加载中…") }
-                        .padding(.top, 40)
+                    BangumiSkeletonGrid()
                 } else if model.loadFailed {
-                    GlassPanel {
-                        VStack(spacing: 12) {
-                            Text("什么都没有找到 (´;ω;`)")
-                                .font(.headline)
-                            if let error = model.lastError {
-                                Text(error.userMessage)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            GlassPrimaryButton("重试", systemImage: "arrow.clockwise") {
-                                Task { await model.reload() }
-                            }
-                        }
-                    }
-                    .padding(.top, 40)
+                    EmptyStateView(
+                        systemImage: "wifi.exclamationmark",
+                        title: "加载失败",
+                        message: model.lastError?.userMessage ?? "请检查网络后重试。",
+                        tone: .warning,
+                        actionTitle: "重试",
+                        action: { Task { await model.reload() } }
+                    )
+                    .padding(.top, 20)
+                } else if model.items.isEmpty {
+                    EmptyStateView(
+                        systemImage: "sparkles",
+                        title: "暂无番剧",
+                        message: "换个标签看看，或下拉重试。"
+                    )
+                    .padding(.top, 20)
                 } else {
                     grid
                 }
@@ -130,9 +130,8 @@ public struct HomeView: View {
             }
         ) {
             if model.isLoadingMore {
-                GlassPanel {
-                    ProgressView("加载更多中…")
-                }
+                BangumiSkeletonGrid(placeholderCount: 4)
+                    .padding(.top, 4)
             }
         }
     }
