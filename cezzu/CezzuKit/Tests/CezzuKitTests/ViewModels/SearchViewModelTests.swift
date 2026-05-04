@@ -218,4 +218,113 @@ struct SearchViewModelTests {
         vm.clearHistory()
         #expect(vm.historyKeywords.isEmpty)
     }
+
+    @Test("submit forwards advanced filter into the request")
+    func submitForwardsAdvancedFilter() async {
+        let api = HomeViewModelTests.FakeBangumiAPI()
+        api.keywordSearchResult = .success([])
+        let vm = SearchViewModel(api: api)
+        vm.text = "海贼王"
+        vm.selectedTags = ["校园", "原创"]
+        vm.ratingMin = 8.0
+        vm.yearMin = 2020
+        vm.yearMax = 2023
+        vm.includeNSFW = true
+
+        await vm.submit()
+
+        #expect(api.keywordSearchFilters.count == 1)
+        let f = api.keywordSearchFilters[0]
+        #expect(f.tags == ["校园", "原创"])
+        #expect(f.ratingMin == 8.0)
+        #expect(f.airDateAfter == "2020-01-01")
+        #expect(f.airDateBefore == "2024-01-01")
+        #expect(f.includeNSFW == true)
+    }
+
+    @Test("addTag dedupes and preserves insertion order")
+    func addTagDedupes() {
+        let api = HomeViewModelTests.FakeBangumiAPI()
+        let vm = SearchViewModel(api: api)
+        vm.addTag("校园")
+        vm.addTag("原创")
+        vm.addTag("  校园  ")
+        vm.addTag("")
+
+        #expect(vm.selectedTags == ["校园", "原创"])
+    }
+
+    @Test("removeTag triggers an immediate research when there is context")
+    func removeTagResearches() async {
+        let api = HomeViewModelTests.FakeBangumiAPI()
+        api.keywordSearchResult = .success([])
+        let vm = SearchViewModel(api: api, debounceMilliseconds: 5)
+        vm.text = "海贼王"
+        vm.selectedTags = ["校园", "原创"]
+        await vm.submit()
+
+        vm.removeTag("校园")
+        await vm.waitForIdle()
+
+        #expect(api.keywordSearchCalls.count == 2)
+        #expect(api.keywordSearchFilters.last?.tags == ["原创"])
+    }
+
+    @Test("resetAdvancedFilter clears all and re-runs the search")
+    func resetAdvancedFilterResearches() async {
+        let api = HomeViewModelTests.FakeBangumiAPI()
+        api.keywordSearchResult = .success([])
+        let vm = SearchViewModel(api: api, debounceMilliseconds: 5)
+        vm.text = "海贼王"
+        vm.selectedTags = ["校园"]
+        vm.ratingMin = 7.5
+        vm.includeNSFW = true
+        await vm.submit()
+
+        vm.resetAdvancedFilter()
+        await vm.waitForIdle()
+
+        #expect(vm.selectedTags.isEmpty)
+        #expect(vm.ratingMin == nil)
+        #expect(vm.includeNSFW == false)
+        #expect(api.keywordSearchCalls.count == 2)
+        #expect(api.keywordSearchFilters.last?.tags.isEmpty == true)
+        #expect(api.keywordSearchFilters.last?.includeNSFW == false)
+    }
+
+    @Test("advancedFilterChanged is a no-op when no keyword/filter would be sent")
+    func advancedFilterChangedNoopWithoutContext() async {
+        let api = HomeViewModelTests.FakeBangumiAPI()
+        let vm = SearchViewModel(api: api, debounceMilliseconds: 5)
+
+        vm.advancedFilterChanged()
+        await vm.waitForIdle()
+
+        #expect(api.keywordSearchCalls.isEmpty)
+    }
+
+    @Test("textChanged triggers even when keyword is short but filter is active")
+    func textChangedRespectsActiveFilter() async {
+        let api = HomeViewModelTests.FakeBangumiAPI()
+        api.keywordSearchResult = .success([])
+        let vm = SearchViewModel(api: api, debounceMilliseconds: 5)
+        vm.selectedTags = ["校园"]
+
+        vm.text = "X"
+        vm.textChanged()
+        await vm.waitForIdle()
+
+        #expect(api.keywordSearchCalls.count == 1)
+        #expect(api.keywordSearchFilters.last?.tags == ["校园"])
+    }
+
+    @Test("selectedTag setter mirrors a single-tag selectedTags")
+    func selectedTagBackCompat() {
+        let api = HomeViewModelTests.FakeBangumiAPI()
+        let vm = SearchViewModel(api: api)
+        vm.selectedTag = "校园"
+        #expect(vm.selectedTags == ["校园"])
+        vm.selectedTag = nil
+        #expect(vm.selectedTags.isEmpty)
+    }
 }

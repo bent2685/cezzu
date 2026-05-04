@@ -6,8 +6,18 @@ import Observation
 @Observable
 public final class SearchViewModel {
     public var text: String = ""
-    public var selectedTag: String? = nil
+    /// 已选标签（多选，按加入顺序保留以保证 UI 稳定）。
+    public var selectedTags: [String] = []
     public var selectedSort: BangumiSearchSort = .match
+    /// 评分下限。`nil` 表示不限制。允许 0...10。
+    public var ratingMin: Double? = nil
+    /// 起始年份（含），`nil` 表示不限。
+    public var yearMin: Int? = nil
+    /// 结束年份（含），`nil` 表示不限。
+    public var yearMax: Int? = nil
+    /// 是否包含 R18。
+    public var includeNSFW: Bool = false
+
     public private(set) var isSearching: Bool = false
     public private(set) var results: [BangumiItem] = []
     public private(set) var lastError: BangumiAPIError?
@@ -28,7 +38,28 @@ public final class SearchViewModel {
     private var nextOffset: Int = 0
     private var lastSubmittedKeyword: String = ""
     private var lastSubmittedSort: BangumiSearchSort = .match
-    private var lastSubmittedTag: String? = nil
+    private var lastSubmittedFilter: BangumiSearchFilter = .default
+
+    /// 兼容旧调用方：返回首个已选 tag。新代码请直接用 `selectedTags`。
+    public var selectedTag: String? {
+        get { selectedTags.first }
+        set {
+            if let value = newValue?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty {
+                selectedTags = [value]
+            } else {
+                selectedTags = []
+            }
+        }
+    }
+
+    /// 是否有任何高级筛选生效（用于 UI 上显示"已启用筛选"提示）。
+    public var hasActiveAdvancedFilter: Bool {
+        !selectedTags.isEmpty
+            || ratingMin != nil
+            || yearMin != nil
+            || yearMax != nil
+            || includeNSFW
+    }
 
     public init(
         api: BangumiAPIClientProtocol,
@@ -47,8 +78,8 @@ public final class SearchViewModel {
 
     public func submit() async {
         let keyword = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let tag = normalizedTag
-        guard !keyword.isEmpty || tag != nil else { return }
+        let filter = makeFilter()
+        guard !keyword.isEmpty || !filter.tags.isEmpty || filter != .default else { return }
         debounceTask?.cancel()
         currentTask?.cancel()
         results = []
@@ -59,7 +90,7 @@ public final class SearchViewModel {
         nextOffset = 0
         lastSubmittedKeyword = keyword
         lastSubmittedSort = selectedSort
-        lastSubmittedTag = tag
+        lastSubmittedFilter = filter
 
         currentTask = Task { [weak self] in
             guard let self else { return }
@@ -67,7 +98,7 @@ public final class SearchViewModel {
                 let fetched = try await api.search(
                     keyword: keyword,
                     sort: selectedSort,
-                    tag: tag ?? "",
+                    filter: filter,
                     limit: Self.pageSize,
                     offset: 0
                 )
@@ -97,8 +128,8 @@ public final class SearchViewModel {
         guard item.id == results.last?.id else { return }
 
         let keyword = lastSubmittedKeyword
-        let tag = lastSubmittedTag
-        guard !keyword.isEmpty || tag != nil else { return }
+        let filter = lastSubmittedFilter
+        guard !keyword.isEmpty || !filter.tags.isEmpty || filter != .default else { return }
         let sort = lastSubmittedSort
         let offset = nextOffset
         isLoadingMore = true
@@ -107,7 +138,7 @@ public final class SearchViewModel {
             let fetched = try await api.search(
                 keyword: keyword,
                 sort: sort,
-                tag: tag ?? "",
+                filter: filter,
                 limit: Self.pageSize,
                 offset: offset
             )
@@ -130,19 +161,62 @@ public final class SearchViewModel {
         isLoadingMore = false
     }
 
+    /// 兼容旧调用方（DetailView 点 tag 跳搜索页）：把已选 tag 重置为这一个。
     public func applyTag(_ tag: String) {
-        selectedTag = tag
+        let trimmed = tag.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        selectedTags = [trimmed]
         text = ""
         debounceTask?.cancel()
     }
 
+    /// 把一个 tag 加入多选列表。已存在时不变。
+    public func addTag(_ tag: String) {
+        let trimmed = tag.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !selectedTags.contains(trimmed) else { return }
+        selectedTags.append(trimmed)
+    }
+
+    /// 从已选 tag 列表里移除一个；如已有搜索上下文则立即重搜。
+    public func removeTag(_ tag: String) {
+        let trimmed = tag.trimmingCharacters(in: .whitespacesAndNewlines)
+        let beforeCount = selectedTags.count
+        selectedTags.removeAll { $0 == trimmed }
+        guard selectedTags.count != beforeCount else { return }
+        advancedFilterChanged()
+    }
+
     public func clearTag() {
-        let hadTag = selectedTag != nil
-        selectedTag = nil
-        if hadTag, !lastSubmittedKeyword.isEmpty || lastSubmittedTag != nil {
-            // tag 是已生效的过滤条件，移除后立即重搜以保证结果集与 UI 一致。
-            scheduleImmediateSubmit()
+        let hadTag = !selectedTags.isEmpty
+        selectedTags = []
+        if hadTag {
+            advancedFilterChanged()
         }
+    }
+
+    /// 一键重置所有高级筛选项。
+    public func resetAdvancedFilter() {
+        let hadAny = hasActiveAdvancedFilter
+        selectedTags = []
+        ratingMin = nil
+        yearMin = nil
+        yearMax = nil
+        includeNSFW = false
+        if hadAny {
+            advancedFilterChanged()
+        }
+    }
+
+    /// 高级筛选项（tag / rating / year / nsfw）变化时由 View 调用。
+    /// 已经有过一次有效搜索时立即重搜，否则按现有 keyword/tag 触发首次搜索（若条件足够）。
+    public func advancedFilterChanged() {
+        let hasContext = !lastSubmittedKeyword.isEmpty
+            || !lastSubmittedFilter.tags.isEmpty
+            || lastSubmittedFilter != .default
+        let canSubmitNow = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || hasActiveAdvancedFilter
+        guard hasContext || canSubmitNow else { return }
+        scheduleImmediateSubmit()
     }
 
     /// 完全清空搜索框并取消任何挂起的请求。给 UI 上的清空按钮。
@@ -173,8 +247,8 @@ public final class SearchViewModel {
     public func textChanged() {
         debounceTask?.cancel()
         let keyword = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if keyword.count < Self.liveSearchMinLength && normalizedTag == nil {
-            // 关键字过短且没有 tag 兜底：取消挂起，不触发请求。
+        if keyword.count < Self.liveSearchMinLength && !hasActiveAdvancedFilter {
+            // 关键字过短且没有任何 advanced filter 兜底：取消挂起，不触发请求。
             return
         }
         let delay = debounceMilliseconds
@@ -191,7 +265,10 @@ public final class SearchViewModel {
 
     /// 排序变化时由 View 调用。如果已经有已生效的搜索上下文，立即重搜；否则什么都不做。
     public func sortChanged() {
-        guard !lastSubmittedKeyword.isEmpty || lastSubmittedTag != nil else { return }
+        let hasContext = !lastSubmittedKeyword.isEmpty
+            || !lastSubmittedFilter.tags.isEmpty
+            || lastSubmittedFilter != .default
+        guard hasContext else { return }
         scheduleImmediateSubmit()
     }
 
@@ -210,9 +287,14 @@ public final class SearchViewModel {
         await currentTask?.value
     }
 
-    private var normalizedTag: String? {
-        guard let selectedTag else { return nil }
-        let trimmed = selectedTag.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
+    /// 把 ViewModel 的 advanced state 拼成 `BangumiSearchFilter`。
+    private func makeFilter() -> BangumiSearchFilter {
+        var filter = BangumiSearchFilter(
+            tags: selectedTags,
+            ratingMin: ratingMin,
+            includeNSFW: includeNSFW
+        )
+        filter.setYearRange(min: yearMin, max: yearMax)
+        return filter
     }
 }
