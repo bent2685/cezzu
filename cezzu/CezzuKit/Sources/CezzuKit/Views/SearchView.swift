@@ -31,13 +31,9 @@ public struct SearchView: View {
 
     @ViewBuilder
     private var hero: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Bangumi 搜索")
-                .font(.largeTitle.bold())
-            Text("先按关键词和排序筛选番剧，再进入详情页挑选可播放源。")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
+        Text("通过 Bangumi 检索番剧，再进入详情页挑选可播放源。")
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
     }
 
     @ViewBuilder
