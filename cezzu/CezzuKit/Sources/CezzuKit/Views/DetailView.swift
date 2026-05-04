@@ -1212,11 +1212,12 @@ public struct DetailView: View {
         VStack(spacing: 24) {
             if !model.item.summary.isEmpty {
                 overviewSection(title: "简介") {
-                    Text(model.item.summary)
-                        .font(.body)
-                        .foregroundStyle(palette.textSecondary)
-                        .lineSpacing(5)
-                        .fixedSize(horizontal: false, vertical: true)
+                    ExpandableSummary(
+                        text: model.item.summary,
+                        collapsedLineLimit: 6,
+                        textColor: palette.textSecondary,
+                        accentColor: palette.textPrimary
+                    )
                 }
             }
 
@@ -1641,5 +1642,70 @@ public struct DetailView: View {
     private func formatMillis(_ ms: Int) -> String {
         let seconds = ms / 1000
         return String(format: "%02d:%02d", seconds / 60, seconds % 60)
+    }
+}
+
+private struct ExpandableSummary: View {
+    let text: String
+    let collapsedLineLimit: Int
+    let textColor: Color
+    let accentColor: Color
+
+    @State private var isExpanded = false
+    @State private var isTruncated = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(text)
+                .font(.body)
+                .foregroundStyle(textColor)
+                .lineSpacing(5)
+                .lineLimit(isExpanded ? nil : collapsedLineLimit)
+                .fixedSize(horizontal: false, vertical: true)
+                .background(measurementOverlay)
+                .animation(.easeInOut(duration: 0.2), value: isExpanded)
+
+            if isTruncated {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) { isExpanded.toggle() }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(isExpanded ? "收起" : "展开更多")
+                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                    }
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(accentColor)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var measurementOverlay: some View {
+        ZStack(alignment: .topLeading) {
+            Text(text)
+                .font(.body)
+                .lineSpacing(5)
+                .lineLimit(collapsedLineLimit)
+                .fixedSize(horizontal: false, vertical: true)
+                .background(GeometryReader { collapsed in
+                    Text(text)
+                        .font(.body)
+                        .lineSpacing(5)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .background(GeometryReader { full in
+                            Color.clear.onAppear {
+                                isTruncated = full.size.height > collapsed.size.height + 0.5
+                            }
+                            .onChange(of: full.size.height) { _, newHeight in
+                                isTruncated = newHeight > collapsed.size.height + 0.5
+                            }
+                        })
+                        .hidden()
+                })
+        }
+        .hidden()
+        .accessibilityHidden(true)
     }
 }
