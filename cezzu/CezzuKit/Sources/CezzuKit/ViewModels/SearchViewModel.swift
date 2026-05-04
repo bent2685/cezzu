@@ -15,8 +15,8 @@ public final class SearchViewModel {
     public var yearMin: Int? = nil
     /// 结束年份（含），`nil` 表示不限。
     public var yearMax: Int? = nil
-    /// 是否包含 R18。
-    public var includeNSFW: Bool = false
+    /// 是否包含 R18。默认开启。
+    public var includeNSFW: Bool = true
 
     public private(set) var isSearching: Bool = false
     public private(set) var results: [BangumiItem] = []
@@ -53,12 +53,13 @@ public final class SearchViewModel {
     }
 
     /// 是否有任何高级筛选生效（用于 UI 上显示"已启用筛选"提示）。
+    /// `includeNSFW` 默认开启 → 关闭时才视为"偏离默认"。
     public var hasActiveAdvancedFilter: Bool {
         !selectedTags.isEmpty
             || ratingMin != nil
             || yearMin != nil
             || yearMax != nil
-            || includeNSFW
+            || !includeNSFW
     }
 
     public init(
@@ -201,7 +202,7 @@ public final class SearchViewModel {
         ratingMin = nil
         yearMin = nil
         yearMax = nil
-        includeNSFW = false
+        includeNSFW = true
         if hadAny {
             advancedFilterChanged()
         }
