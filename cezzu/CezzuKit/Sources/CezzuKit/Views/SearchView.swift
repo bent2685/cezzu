@@ -5,6 +5,9 @@ public struct SearchView: View {
     @Bindable var model: SearchViewModel
     var onTapItem: (BangumiItem) -> Void
     @FocusState private var isInputFocused: Bool
+    @State private var advancedExpanded: Bool = false
+    @State private var newTagDraft: String = ""
+    @FocusState private var isNewTagFocused: Bool
 
     /// 历史下拉一次最多显示多少条。
     private static let historyDropdownLimit: Int = 8
@@ -80,26 +83,6 @@ public struct SearchView: View {
                 if shouldShowHistory {
                     historyDropdown
                 }
-                if let selectedTag = model.selectedTag {
-                    HStack(spacing: 8) {
-                        Text("标签筛选")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Button {
-                            model.clearTag()
-                        } label: {
-                            HStack(spacing: 6) {
-                                Text(selectedTag)
-                                Image(systemName: "xmark.circle.fill")
-                            }
-                            .font(.caption.weight(.medium))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .glassBackground(in: Capsule(), tint: .accentColor.opacity(0.18))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
                 Picker("排序", selection: $model.selectedSort) {
                     ForEach([BangumiSearchSort.match, .heat, .score], id: \.self) { sort in
                         Text(sort.title).tag(sort)
@@ -109,6 +92,198 @@ public struct SearchView: View {
                 .onChange(of: model.selectedSort) { _, _ in
                     model.sortChanged()
                 }
+                advancedFilterSection
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var advancedFilterSection: some View {
+        DisclosureGroup(isExpanded: $advancedExpanded) {
+            VStack(alignment: .leading, spacing: 16) {
+                tagFilterRow
+                ratingFilterRow
+                yearFilterRow
+                nsfwFilterRow
+                if model.hasActiveAdvancedFilter {
+                    Button {
+                        model.resetAdvancedFilter()
+                    } label: {
+                        Label("重置筛选", systemImage: "arrow.counterclockwise")
+                            .font(.caption.weight(.medium))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.top, 8)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "slider.horizontal.3")
+                Text("高级筛选")
+                if model.hasActiveAdvancedFilter {
+                    Text("已启用")
+                        .font(.caption2.weight(.medium))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .glassBackground(in: Capsule(), tint: .accentColor.opacity(0.22))
+                }
+            }
+            .font(.subheadline.weight(.medium))
+        }
+    }
+
+    @ViewBuilder
+    private var tagFilterRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("标签")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if !model.selectedTags.isEmpty {
+                FlowLayout(horizontalSpacing: 6, verticalSpacing: 6) {
+                    ForEach(model.selectedTags, id: \.self) { tag in
+                        Button {
+                            model.removeTag(tag)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(tag)
+                                Image(systemName: "xmark.circle.fill")
+                            }
+                            .font(.caption.weight(.medium))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .glassBackground(in: Capsule(), tint: .accentColor.opacity(0.18))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("移除标签 \(tag)")
+                    }
+                }
+            }
+            HStack(spacing: 8) {
+                TextField("添加标签…", text: $newTagDraft)
+                    .textFieldStyle(.plain)
+                    .focused($isNewTagFocused)
+                    .submitLabel(.done)
+                    .onSubmit(commitTagDraft)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .glassBackground(in: Capsule())
+                Button {
+                    commitTagDraft()
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(newTagDraft.trimmingCharacters(in: .whitespaces).isEmpty
+                                         ? AnyShapeStyle(.secondary)
+                                         : AnyShapeStyle(Color.accentColor))
+                }
+                .buttonStyle(.plain)
+                .disabled(newTagDraft.trimmingCharacters(in: .whitespaces).isEmpty)
+                .accessibilityLabel("添加标签")
+            }
+        }
+    }
+
+    private func commitTagDraft() {
+        let trimmed = newTagDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let alreadySelected = model.selectedTags.contains(trimmed)
+        model.addTag(trimmed)
+        newTagDraft = ""
+        if !alreadySelected {
+            model.advancedFilterChanged()
+        }
+    }
+
+    @ViewBuilder
+    private var ratingFilterRow: some View {
+        let binding = Binding<Double>(
+            get: { model.ratingMin ?? 0 },
+            set: { newValue in
+                model.ratingMin = newValue > 0 ? newValue : nil
+                model.advancedFilterChanged()
+            }
+        )
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("最低评分")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(model.ratingMin.map { String(format: "≥ %.1f", $0) } ?? "不限")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.primary)
+            }
+            Slider(value: binding, in: 0...10, step: 0.5)
+        }
+    }
+
+    @ViewBuilder
+    private var yearFilterRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("年份范围")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            HStack(spacing: 12) {
+                yearStepper(title: "起", value: Binding(
+                    get: { model.yearMin },
+                    set: { model.yearMin = $0; model.advancedFilterChanged() }
+                ))
+                Text("—")
+                    .foregroundStyle(.secondary)
+                yearStepper(title: "止", value: Binding(
+                    get: { model.yearMax },
+                    set: { model.yearMax = $0; model.advancedFilterChanged() }
+                ))
+                Spacer()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func yearStepper(title: String, value: Binding<Int?>) -> some View {
+        let display = value.wrappedValue.map(String.init) ?? "不限"
+        HStack(spacing: 6) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(display)
+                .font(.caption.monospacedDigit())
+                .frame(minWidth: 36, alignment: .leading)
+            Stepper("", value: Binding(
+                get: { value.wrappedValue ?? 0 },
+                set: { newValue in
+                    value.wrappedValue = newValue == 0 ? nil : newValue
+                }
+            ), in: 0...3000, step: 1)
+            .labelsHidden()
+            if value.wrappedValue != nil {
+                Button {
+                    value.wrappedValue = nil
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var nsfwFilterRow: some View {
+        Toggle(isOn: Binding(
+            get: { model.includeNSFW },
+            set: { newValue in
+                model.includeNSFW = newValue
+                model.advancedFilterChanged()
+            }
+        )) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("包含 R18 内容")
+                    .font(.subheadline)
+                Text("关闭时不会返回 NSFW 番剧。")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
         }
     }
