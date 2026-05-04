@@ -209,8 +209,8 @@ public struct SearchView: View {
         let binding = Binding<Double>(
             get: { model.ratingMin ?? 0 },
             set: { newValue in
+                // 只更新 UI 状态，不触发搜索；松手时由 onEditingChanged 统一发请求。
                 model.ratingMin = newValue > 0 ? newValue : nil
-                model.advancedFilterChanged()
             }
         )
         VStack(alignment: .leading, spacing: 6) {
@@ -222,8 +222,12 @@ public struct SearchView: View {
                     .foregroundStyle(model.ratingMin == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.accentColor))
                     .contentTransition(.numericText())
             }
-            Slider(value: binding, in: 0...10, step: 0.5)
-                .tint(.accentColor)
+            Slider(value: binding, in: 0...10, step: 0.5) { editing in
+                if !editing {
+                    model.advancedFilterChanged()
+                }
+            }
+            .tint(.accentColor)
         }
     }
 
