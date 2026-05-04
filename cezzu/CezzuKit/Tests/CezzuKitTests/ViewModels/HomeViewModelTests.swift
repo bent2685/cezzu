@@ -15,6 +15,7 @@ struct HomeViewModelTests {
         private(set) var searchCalls: [String] = []
         private(set) var searchOffsets: [Int] = []
         private(set) var keywordSearchCalls: [(String, BangumiSearchSort, Int)] = []
+        private(set) var keywordSearchFilters: [BangumiSearchFilter] = []
 
         func trending(limit: Int, offset: Int) async throws -> [BangumiItem] {
             trendingCalls += 1
@@ -36,11 +37,12 @@ struct HomeViewModelTests {
         func search(
             keyword: String,
             sort: BangumiSearchSort,
-            tag: String,
+            filter: BangumiSearchFilter,
             limit: Int,
             offset: Int
         ) async throws -> [BangumiItem] {
             keywordSearchCalls.append((keyword, sort, offset))
+            keywordSearchFilters.append(filter)
             switch keywordSearchResult {
             case .success(let items): return items
             case .failure(let error): throw error

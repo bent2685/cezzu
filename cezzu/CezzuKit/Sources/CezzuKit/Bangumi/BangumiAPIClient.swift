@@ -11,7 +11,16 @@ public protocol BangumiAPIClientProtocol: Sendable {
     func trending(limit: Int, offset: Int) async throws -> [BangumiItem]
     /// 按 tag 拿番剧列表（api.bgm.tv `/v0/search/subjects`）
     func search(tag: String, limit: Int, offset: Int) async throws -> [BangumiItem]
-    /// 按关键字搜索番剧，并支持排序。
+    /// 按关键字搜索番剧，并支持排序与高级筛选。
+    func search(
+        keyword: String,
+        sort: BangumiSearchSort,
+        filter: BangumiSearchFilter,
+        limit: Int,
+        offset: Int
+    ) async throws -> [BangumiItem]
+    /// 兼容旧调用方的简易关键字搜索（单 tag、不含 R18）。
+    /// 默认实现委派到 `search(keyword:sort:filter:...)`。
     func search(
         keyword: String,
         sort: BangumiSearchSort,
@@ -25,6 +34,29 @@ public protocol BangumiAPIClientProtocol: Sendable {
     func fetchPersons(subjectID: Int) async throws -> [BangumiRelatedPerson]
     func fetchComments(subjectID: Int) async throws -> [BangumiSubjectComment]
     func fetchReviews(subjectID: Int) async throws -> [BangumiSubjectReview]
+}
+
+extension BangumiAPIClientProtocol {
+    /// 默认实现：把单 tag 旧 API 转成新的 filter API。
+    public func search(
+        keyword: String,
+        sort: BangumiSearchSort,
+        tag: String,
+        limit: Int,
+        offset: Int
+    ) async throws -> [BangumiItem] {
+        let trimmed = tag.trimmingCharacters(in: .whitespacesAndNewlines)
+        let filter = BangumiSearchFilter(
+            tags: trimmed.isEmpty ? [] : [trimmed]
+        )
+        return try await search(
+            keyword: keyword,
+            sort: sort,
+            filter: filter,
+            limit: limit,
+            offset: offset
+        )
+    }
 }
 
 /// Bangumi.tv 真实 HTTP 客户端。
@@ -96,19 +128,21 @@ public actor BangumiAPIClient: BangumiAPIClientProtocol {
         limit: Int = 30,
         offset: Int = 0
     ) async throws -> [BangumiItem] {
-        try await searchSubjects(
+        let trimmed = tag.trimmingCharacters(in: .whitespacesAndNewlines)
+        let filter = BangumiSearchFilter(tags: trimmed.isEmpty ? [] : [trimmed])
+        return try await searchSubjects(
             keyword: "",
             sort: .rank,
             limit: limit,
             offset: offset,
-            filterTag: tag
+            filter: filter
         )
     }
 
     public func search(
         keyword: String,
         sort: BangumiSearchSort,
-        tag: String = "",
+        filter: BangumiSearchFilter,
         limit: Int = 30,
         offset: Int = 0
     ) async throws -> [BangumiItem] {
@@ -117,7 +151,7 @@ public actor BangumiAPIClient: BangumiAPIClientProtocol {
             sort: sort,
             limit: limit,
             offset: offset,
-            filterTag: tag
+            filter: filter
         )
     }
 
@@ -170,7 +204,7 @@ public actor BangumiAPIClient: BangumiAPIClientProtocol {
         sort: BangumiSearchSort,
         limit: Int,
         offset: Int,
-        filterTag: String
+        filter: BangumiSearchFilter
     ) async throws -> [BangumiItem] {
         var components = URLComponents(
             url: apiDomain.appendingPathComponent("/v0/search/subjects"),
@@ -191,12 +225,7 @@ public actor BangumiAPIClient: BangumiAPIClientProtocol {
         let body = SearchRequestBody(
             keyword: keyword,
             sort: sort.rawValue,
-            filter: SearchRequestBody.Filter(
-                type: [2],
-                tag: filterTag.isEmpty ? [] : [filterTag],
-                rank: [">0", "<=99999"],
-                nsfw: false
-            )
+            filter: SearchRequestBody.Filter(filter: filter)
         )
         req.httpBody = try JSONEncoder().encode(body)
 
@@ -375,7 +404,51 @@ private struct SearchRequestBody: Encodable {
         let type: [Int]
         let tag: [String]
         let rank: [String]
-        let nsfw: Bool
+        let rating: [String]?
+        let air_date: [String]?
+        let nsfw: Bool?
+
+        init(filter: BangumiSearchFilter) {
+            self.type = [2]
+            self.tag = filter.tags
+            self.rank = [">0", "<=99999"]
+
+            var ratingExprs: [String] = []
+            if let lo = filter.ratingMin { ratingExprs.append(">=\(Self.formatRating(lo))") }
+            if let hi = filter.ratingMax { ratingExprs.append("<=\(Self.formatRating(hi))") }
+            self.rating = ratingExprs.isEmpty ? nil : ratingExprs
+
+            var airExprs: [String] = []
+            if let lo = filter.airDateAfter { airExprs.append(">=\(lo)") }
+            if let hi = filter.airDateBefore { airExprs.append("<\(hi)") }
+            self.air_date = airExprs.isEmpty ? nil : airExprs
+
+            // includeNSFW=false → 显式 nsfw:false（仅非 R18）
+            // includeNSFW=true  → 不发 nsfw 字段（API 默认返回所有）
+            self.nsfw = filter.includeNSFW ? nil : false
+        }
+
+        private static func formatRating(_ value: Double) -> String {
+            // 评分常见 0.5 step；渲染成 8.5 / 9 这类形态。
+            if value.truncatingRemainder(dividingBy: 1) == 0 {
+                return String(format: "%.0f", value)
+            }
+            return String(format: "%.1f", value)
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case type, tag, rank, rating, air_date, nsfw
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(type, forKey: .type)
+            try c.encode(tag, forKey: .tag)
+            try c.encode(rank, forKey: .rank)
+            if let rating { try c.encode(rating, forKey: .rating) }
+            if let air_date { try c.encode(air_date, forKey: .air_date) }
+            if let nsfw { try c.encode(nsfw, forKey: .nsfw) }
+        }
     }
 }
 

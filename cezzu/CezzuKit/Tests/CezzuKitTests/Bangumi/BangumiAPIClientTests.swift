@@ -120,6 +120,94 @@ struct BangumiAPIClientTests {
         #expect(items[0].nameCn == "甲")
     }
 
+    /// 高级筛选：多 tag、评分上下限、air_date 区间、includeNSFW=true 时不发 nsfw 字段。
+    @Test("search forwards advanced filter as JSON body")
+    func searchForwardsAdvancedFilter() async throws {
+        let searchJSON = #"{ "data": [] }"#
+        let session = URLSession.stub(handler: { req in
+            let bodyData: Data = {
+                if let d = req.httpBody { return d }
+                if let s = req.httpBodyStream {
+                    s.open()
+                    defer { s.close() }
+                    var data = Data()
+                    let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: 4096)
+                    defer { buf.deallocate() }
+                    while s.hasBytesAvailable {
+                        let n = s.read(buf, maxLength: 4096)
+                        if n <= 0 { break }
+                        data.append(buf, count: n)
+                    }
+                    return data
+                }
+                return Data()
+            }()
+            let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any]
+            let filter = json?["filter"] as? [String: Any]
+            #expect((filter?["tag"] as? [String]) == ["校园", "原创"])
+            #expect((filter?["rating"] as? [String]) == [">=8", "<=10"])
+            #expect((filter?["air_date"] as? [String]) == [">=2020-01-01", "<2024-01-01"])
+            // includeNSFW=true → nsfw 字段不应出现
+            #expect(filter?["nsfw"] == nil)
+            return (200, Data(searchJSON.utf8))
+        })
+        let client = BangumiAPIClient(session: session)
+        var filter = BangumiSearchFilter(
+            tags: ["校园", "原创"],
+            ratingMin: 8,
+            ratingMax: 10,
+            includeNSFW: true
+        )
+        filter.setYearRange(min: 2020, max: 2023)
+
+        _ = try await client.search(
+            keyword: "k",
+            sort: .heat,
+            filter: filter,
+            limit: 30,
+            offset: 0
+        )
+    }
+
+    /// includeNSFW=false 时 body 应显式带 nsfw:false。
+    @Test("search keeps nsfw:false when filter excludes R18")
+    func searchKeepsNSFWFalse() async throws {
+        let searchJSON = #"{ "data": [] }"#
+        let session = URLSession.stub(handler: { req in
+            let bodyData: Data = {
+                if let d = req.httpBody { return d }
+                if let s = req.httpBodyStream {
+                    s.open()
+                    defer { s.close() }
+                    var data = Data()
+                    let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: 4096)
+                    defer { buf.deallocate() }
+                    while s.hasBytesAvailable {
+                        let n = s.read(buf, maxLength: 4096)
+                        if n <= 0 { break }
+                        data.append(buf, count: n)
+                    }
+                    return data
+                }
+                return Data()
+            }()
+            let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any]
+            let filter = json?["filter"] as? [String: Any]
+            #expect(filter?["nsfw"] as? Bool == false)
+            #expect(filter?["rating"] == nil)
+            #expect(filter?["air_date"] == nil)
+            return (200, Data(searchJSON.utf8))
+        })
+        let client = BangumiAPIClient(session: session)
+        _ = try await client.search(
+            keyword: "k",
+            sort: .match,
+            filter: .default,
+            limit: 30,
+            offset: 0
+        )
+    }
+
     /// HTTP 5xx 应该抛 BangumiAPIError.http
     @Test("HTTP 500 throws .http error")
     func http500Throws() async {

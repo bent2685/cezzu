@@ -92,7 +92,7 @@ struct DetailViewModelTests {
         func search(
             keyword: String,
             sort: BangumiSearchSort,
-            tag: String,
+            filter: BangumiSearchFilter,
             limit: Int,
             offset: Int
         ) async throws -> [BangumiItem] { [] }
