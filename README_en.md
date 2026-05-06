@@ -179,6 +179,10 @@ Cezzu is a **fully local client app**. There is no "Cezzu cloud" of any kind.
 
 In short: what you watch, follow, or search for is known only to your own device.
 
+## Feedback
+**Issues:** Feel free to post any issues or questions in this repository.
+**Friends & Links:** [LINUX DO](https://linux.do/) - A Chinese community for technology enthusiasts. This project is linked with and endorsed by LINUX DO.
+
 ## License
 
 MIT — see [LICENSE](./LICENSE).
