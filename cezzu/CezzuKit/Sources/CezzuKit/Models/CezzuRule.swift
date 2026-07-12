@@ -6,8 +6,7 @@ import Foundation
 /// 注意：
 ///   - `api` 与 `version` 都是 `String`（不是 Int）
 ///   - 历史拼写 `muliSources`（少一个 `t`）**保留原样**，是 cezzu-rule 格式的一部分
-///   - 五个可选字段（`usePost`, `useLegacyParser`, `adBlocker`, `referer`,
-///     `antiCrawlerConfig`）都有默认值
+///   - 可选字段（`usePost` / `searchMode` / `searchApiConfig` 等）都有默认值
 public struct CezzuRule: Codable, Hashable, Sendable, Identifiable {
 
     // 必填字段
@@ -34,6 +33,13 @@ public struct CezzuRule: Codable, Hashable, Sendable, Identifiable {
     public var referer: String
     public var antiCrawlerConfig: AntiCrawlerConfig?
 
+    /// 搜索解析模式。默认 `xpath`；`api` 时走 `searchApiConfig`。
+    public var searchMode: RuleMode
+    /// 章节解析模式。默认 `xpath`；`api` 时走 `chapterApiConfig`。
+    public var chapterMode: RuleMode
+    public var searchApiConfig: ApiSearchConfig?
+    public var chapterApiConfig: ApiChapterConfig?
+
     /// `Identifiable` 用 `name` 作为 id —— 规则名是全局唯一键。
     public var id: String { name }
 
@@ -57,7 +63,11 @@ public struct CezzuRule: Codable, Hashable, Sendable, Identifiable {
         useLegacyParser: Bool = false,
         adBlocker: Bool = false,
         referer: String = "",
-        antiCrawlerConfig: AntiCrawlerConfig? = nil
+        antiCrawlerConfig: AntiCrawlerConfig? = nil,
+        searchMode: RuleMode = .xpath,
+        chapterMode: RuleMode = .xpath,
+        searchApiConfig: ApiSearchConfig? = nil,
+        chapterApiConfig: ApiChapterConfig? = nil
     ) {
         self.api = api
         self.type = type
@@ -79,6 +89,10 @@ public struct CezzuRule: Codable, Hashable, Sendable, Identifiable {
         self.adBlocker = adBlocker
         self.referer = referer
         self.antiCrawlerConfig = antiCrawlerConfig
+        self.searchMode = searchMode
+        self.chapterMode = chapterMode
+        self.searchApiConfig = searchApiConfig
+        self.chapterApiConfig = chapterApiConfig
     }
 
     // MARK: Codable
@@ -104,6 +118,10 @@ public struct CezzuRule: Codable, Hashable, Sendable, Identifiable {
         case adBlocker
         case referer
         case antiCrawlerConfig
+        case searchMode
+        case chapterMode
+        case searchApiConfig
+        case chapterApiConfig
     }
 
     public init(from decoder: any Decoder) throws {
@@ -132,6 +150,16 @@ public struct CezzuRule: Codable, Hashable, Sendable, Identifiable {
         self.referer = try c.decodeIfPresent(String.self, forKey: .referer) ?? ""
         self.antiCrawlerConfig =
             try c.decodeIfPresent(AntiCrawlerConfig.self, forKey: .antiCrawlerConfig)
+        self.searchMode = RuleMode(
+            rawValueOrDefault: try c.decodeIfPresent(String.self, forKey: .searchMode)
+        )
+        self.chapterMode = RuleMode(
+            rawValueOrDefault: try c.decodeIfPresent(String.self, forKey: .chapterMode)
+        )
+        self.searchApiConfig =
+            try c.decodeIfPresent(ApiSearchConfig.self, forKey: .searchApiConfig)
+        self.chapterApiConfig =
+            try c.decodeIfPresent(ApiChapterConfig.self, forKey: .chapterApiConfig)
     }
 
     // MARK: Convenience

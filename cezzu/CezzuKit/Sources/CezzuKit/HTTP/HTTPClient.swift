@@ -51,6 +51,39 @@ public actor HTTPClient {
         return try await perform(req, ruleName: rule.name)
     }
 
+    /// 执行已渲染的 API 规则请求（`searchMode` / `chapterMode` = api）。
+    public func performPrepared(
+        _ prepared: PreparedRuleRequest,
+        rule: CezzuRule
+    ) async throws -> (Data, HTTPURLResponse) {
+        var req = URLRequest(url: prepared.url)
+        req.httpMethod = prepared.method
+        applyHeaders(to: &req, rule: rule)
+        for (key, value) in prepared.headers {
+            req.setValue(value, forHTTPHeaderField: key)
+        }
+        if prepared.method == "POST", let body = prepared.body {
+            req.httpBody = body
+            switch prepared.bodyType {
+            case .json:
+                if req.value(forHTTPHeaderField: "Content-Type") == nil {
+                    req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                }
+            case .form:
+                if req.value(forHTTPHeaderField: "Content-Type") == nil {
+                    req.setValue(
+                        "application/x-www-form-urlencoded",
+                        forHTTPHeaderField: "Content-Type"
+                    )
+                }
+            case .none:
+                break
+            }
+        }
+        await applyCookies(to: &req, ruleName: rule.name, url: prepared.url)
+        return try await perform(req, ruleName: rule.name)
+    }
+
     // MARK: - internals
 
     private func applyCookies(to req: inout URLRequest, ruleName: String, url: URL) async {

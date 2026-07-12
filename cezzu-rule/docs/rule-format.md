@@ -28,6 +28,10 @@ cezzu-rule 是一组共 20 个核心字段的 JSON 规则格式，用字符串�
 | `chapterResult` | string | ✓ | — | XPath（相对于每个 `chapterRoads` 容器）：每集的链接元素。文本作为集名，`@href` 作为播放页 URL。 |
 | `referer` | string | ✗ | `""` | 搜索请求的 `Referer` 头。**API ≥ 3** 才生效；某些 CDN 拒绝空 Referer。 |
 | `antiCrawlerConfig` | object | ✗ | `null` | 反爬配置子树（验证码自动求解）。**API ≥ 6** 才生效，详见下文。 |
+| `searchMode` | string | ✗ | `"xpath"` | 搜索解析模式：`"xpath"`（默认，HTML + XPath）或 `"api"`（JSON API + JSONPath）。**API ≥ 8**。 |
+| `chapterMode` | string | ✗ | `"xpath"` | 章节解析模式：`"xpath"` 或 `"api"`。**API ≥ 8**。 |
+| `searchApiConfig` | object | ✗ | `null` | `searchMode = "api"` 时的搜索请求与 JSONPath 映射，见下文。 |
+| `chapterApiConfig` | object | ✗ | `null` | `chapterMode = "api"` 时的章节请求与 JSONPath 映射，见下文。 |
 
 ### `antiCrawlerConfig` 子结构
 
@@ -41,6 +45,34 @@ cezzu-rule 是一组共 20 个核心字段的 JSON 规则格式，用字符串�
 
 > Cezzu 客户端自 0.1.0-alpha.6 起消费这组字段：搜索页 HTML 命中 `captchaImage` 或 `captchaButton` 的 XPath 时，App 会抛出 `captchaRequired` 并弹出内置 `WKWebView` sheet 让用户在真浏览器里完成校验，通过后把 cookie 合并进内存级 `PluginCookieStore`，后续同规则请求自动带上。`enabled: false` 或字段缺失则走原有无反爬逻辑。
 
+### `searchApiConfig` / `chapterApiConfig`（API 模式）
+
+当站点提供 JSON 接口而不是 HTML 列表时，把 `searchMode` / `chapterMode` 设为 `"api"`，并用受限 JSONPath（仅 `$`、`.field`、`['field']`、`[index]`、`[*]`）描述响应映射。
+
+**`searchApiConfig`：**
+
+| 字段 | 含义 |
+| --- | --- |
+| `request.method` | `GET` / `POST` |
+| `request.url` | 请求 URL 模板，可用 `@keyword` |
+| `request.query` | query 字典，值可用 `@keyword` 等模板变量 |
+| `listPath` | 结果数组 JSONPath（如 `$.data.videos[*]`） |
+| `namePath` | 相对每条结果的标题路径（如 `$.name`） |
+| `sourcePath` | 相对每条结果的来源 id / URL 路径（如 `$.id`）；客户端会把它编码进 `detailURL`，章节请求里以 `@source` 回填 |
+
+**`chapterApiConfig`：**
+
+| 字段 | 含义 |
+| --- | --- |
+| `request` | 同搜索，模板变量含 `@source` |
+| `format` | `nested`（默认）或 `delimited` |
+| `roadsPath` / `roadNamePath` / `episodesPath` / `episodeNamePath` / `episodeUrlPath` | nested 格式映射 |
+| `roadNamesPath` / `roadEpisodesPath` + 分隔符 | delimited 格式映射 |
+| `variables` | 从章节响应再抽命名变量（JSONPath → 模板变量，如 `slug`） |
+| `episodePage.url` / `episodePage.query` | 播放页模板；可用 `@slug` `@roadIndex` `@episodeIndex` `@source` 等 |
+
+参考规则：`rules/TvTFun.json`。
+
 ### 仓库专用字段（运行时不读，但工具会用）
 
 | 字段 | 类型 | 含义 |
@@ -48,7 +80,7 @@ cezzu-rule 是一组共 20 个核心字段的 JSON 规则格式，用字符串�
 | `deprecated` | bool | 弃用标记。`true` 时 `update_index.swift` 会把它从 `index.json` 中剔除。 |
 | `author` | string | 规则作者署名。`update_index.swift` 会把它写进 catalog 条目。 |
 
-客户端解码器**只会读上面 20 个核心字段**；`deprecated` 与 `author` 是仓库工具的扩展，不影响 App 行为。
+客户端解码器会读核心字段 + API 模式字段；`deprecated` 与 `author` 是仓库工具的扩展，不影响 App 行为。
 
 ## 完整示例（带注释）
 

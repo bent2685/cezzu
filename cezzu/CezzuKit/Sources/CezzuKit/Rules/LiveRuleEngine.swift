@@ -19,6 +19,9 @@ public final class LiveRuleEngine: RuleEngine, Sendable {
         _ keyword: String,
         with rule: CezzuRule
     ) async throws -> [SearchResult] {
+        if rule.searchMode == .api {
+            return try await searchAPI(keyword, with: rule)
+        }
         guard let url = rule.resolvedSearchURL(for: keyword) else {
             throw RuleEngineError.invalidURL(rule.searchURL)
         }
@@ -30,6 +33,32 @@ public final class LiveRuleEngine: RuleEngine, Sendable {
         }
         let html = decodeHTML(data: data)
         return try parseSearchResults(html: html, rule: rule)
+    }
+
+    private func searchAPI(
+        _ keyword: String,
+        with rule: CezzuRule
+    ) async throws -> [SearchResult] {
+        guard let config = rule.searchApiConfig else {
+            throw RuleEngineError.parse(
+                message: "searchMode=api 但缺少 searchApiConfig",
+                rule: rule.name
+            )
+        }
+        do {
+            let prepared = try ApiRuleEngine.prepareRequest(
+                config.request,
+                variables: ["keyword": keyword]
+            )
+            let (data, _) = try await httpClient.performPrepared(prepared, rule: rule)
+            return try ApiRuleEngine.parseSearch(
+                data: data,
+                config: config,
+                ruleName: rule.name
+            )
+        } catch let error as RestrictedJSONPath.FormatError {
+            throw RuleEngineError.parse(message: error.message, rule: rule.name)
+        }
     }
 
     func parseSearchResults(html: String, rule: CezzuRule) throws -> [SearchResult] {
@@ -70,9 +99,40 @@ public final class LiveRuleEngine: RuleEngine, Sendable {
         detailURL: URL,
         with rule: CezzuRule
     ) async throws -> [EpisodeRoad] {
+        if rule.chapterMode == .api {
+            return try await fetchEpisodesAPI(detailURL: detailURL, with: rule)
+        }
         let (data, _) = try await httpClient.get(detailURL, rule: rule)
         let html = decodeHTML(data: data)
         return try parseEpisodes(html: html, rule: rule, baseURL: detailURL)
+    }
+
+    private func fetchEpisodesAPI(
+        detailURL: URL,
+        with rule: CezzuRule
+    ) async throws -> [EpisodeRoad] {
+        guard let config = rule.chapterApiConfig else {
+            throw RuleEngineError.parse(
+                message: "chapterMode=api 但缺少 chapterApiConfig",
+                rule: rule.name
+            )
+        }
+        let source = ApiRuleEngine.source(from: detailURL)
+        do {
+            let prepared = try ApiRuleEngine.prepareRequest(
+                config.request,
+                variables: ["source": source]
+            )
+            let (data, _) = try await httpClient.performPrepared(prepared, rule: rule)
+            return try ApiRuleEngine.parseChapters(
+                data: data,
+                config: config,
+                source: source,
+                baseURL: rule.baseURL
+            )
+        } catch let error as RestrictedJSONPath.FormatError {
+            throw RuleEngineError.parse(message: error.message, rule: rule.name)
+        }
     }
 
     func parseEpisodes(

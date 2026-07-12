@@ -169,7 +169,11 @@ struct CezzuRuleDecodingTests {
         for rule in rules {
             #expect(!rule.name.isEmpty)
             #expect(!rule.baseURL.isEmpty)
-            #expect(rule.searchURL.contains("@keyword"))
+            if rule.searchMode == .api {
+                #expect(rule.searchApiConfig != nil)
+            } else {
+                #expect(rule.searchURL.contains("@keyword"))
+            }
         }
     }
 
