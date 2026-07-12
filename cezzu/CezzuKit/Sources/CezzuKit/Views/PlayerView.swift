@@ -119,17 +119,7 @@ public struct PlayerView: View {
                                     .lineLimit(1)
                             }
                             .foregroundStyle(.white)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            Text(
-                                DownloadSpeedFormatter.format(
-                                    bytesPerSecond: coordinator.backend.downloadSpeedBps
-                                )
-                            )
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.white.opacity(0.9))
-                            .fixedSize(horizontal: true, vertical: false)
-                            .layoutPriority(1)
-                            .accessibilityLabel("下行速度")
+                            Spacer()
                             legacyCircularControlButton(
                                 systemImage: "text.bubble",
                                 size: 42,
@@ -601,6 +591,7 @@ public struct PlayerView: View {
                         revealControlsTemporarily()
                     }
                 }
+                downloadSpeedLabel
                 superResolutionMenuButton()
                 speedMenuButton
                 if interaction.showsFullscreenToggle {
@@ -631,6 +622,7 @@ public struct PlayerView: View {
                     revealControlsTemporarily()
                 }
             }
+            downloadSpeedLabel
             superResolutionMenuButton(size: 40, font: .title3)
             speedMenuButton
             if interaction.showsFullscreenToggle {
@@ -641,6 +633,18 @@ public struct PlayerView: View {
                 }
             }
         }
+    }
+
+    private var downloadSpeedLabel: some View {
+        Text(
+            DownloadSpeedFormatter.format(
+                bytesPerSecond: coordinator.backend.downloadSpeedBps
+            )
+        )
+        .font(.caption.weight(.medium))
+        .foregroundStyle(.white.opacity(0.9))
+        .fixedSize(horizontal: true, vertical: false)
+        .accessibilityLabel("下行速度")
     }
 
     @ViewBuilder
