@@ -127,8 +127,11 @@ public final class PlayerPictureInPictureController {
 
         override func layoutSubviews() {
             super.layoutSubviews()
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
             playerLayer.frame = bounds
             superResolutionLayer?.frame = bounds
+            CATransaction.commit()
         }
     }
 
@@ -337,8 +340,23 @@ public final class PlayerPictureInPictureController {
         override init(frame frameRect: NSRect) {
             super.init(frame: frameRect)
             wantsLayer = true
+            // 实时跟随窗口拖拽，避免 live resize 期间等 layout 才重绘。
+            layerContentsRedrawPolicy = .duringViewResize
             let root = CALayer()
             root.backgroundColor = NSColor.black.cgColor
+            // 关掉 bounds/position 隐式动画，否则 resize 结束时会出现 0–2s 的线性放大。
+            root.actions = [
+                "bounds": NSNull(),
+                "position": NSNull(),
+                "contents": NSNull(),
+                "sublayers": NSNull(),
+            ]
+            playerLayer.actions = [
+                "bounds": NSNull(),
+                "position": NSNull(),
+                "contents": NSNull(),
+                "frame": NSNull(),
+            ]
             root.addSublayer(playerLayer)
             layer = root
         }
@@ -346,8 +364,22 @@ public final class PlayerPictureInPictureController {
         @available(*, unavailable)
         required init?(coder: NSCoder) { nil }
 
+        override func setFrameSize(_ newSize: NSSize) {
+            super.setFrameSize(newSize)
+            // live resize 期间 AppKit 会频繁调用这里；立刻同步 layer，保证跟手。
+            syncLayerFrames()
+        }
+
         override func layout() {
             super.layout()
+            syncLayerFrames()
+        }
+
+        private func syncLayerFrames() {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            defer { CATransaction.commit() }
+            layer?.frame = CGRect(origin: .zero, size: bounds.size)
             playerLayer.frame = bounds
             superResolutionLayer?.frame = bounds
         }
@@ -426,8 +458,17 @@ public final class PlayerPictureInPictureController {
                     if let pipeline = VideoSuperResolutionPipeline() {
                         view.pipeline = pipeline
                         view.superResolutionLayer = pipeline.metalLayer
+                        pipeline.metalLayer.actions = [
+                            "bounds": NSNull(),
+                            "position": NSNull(),
+                            "contents": NSNull(),
+                            "frame": NSNull(),
+                        ]
                         view.layer?.addSublayer(pipeline.metalLayer)
+                        CATransaction.begin()
+                        CATransaction.setDisableActions(true)
                         pipeline.metalLayer.frame = view.bounds
+                        CATransaction.commit()
                     } else {
                         view.currentMode = .off
                         view.playerLayer.isHidden = false
