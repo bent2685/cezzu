@@ -6,10 +6,26 @@ import SwiftUI
 /// 内部根据 `horizontalSizeClass` 选择 TabView（iPhone）或 NavigationSplitView
 /// （iPad / Mac）。逻辑层零分叉。
 public struct CezzuRoot: View {
-    @State private var session: CezzuSession = .empty()
+    /// 外部传入的 session（macOS 多窗口场景）。不能放进 @State，否则 App 侧替换 session 时
+    /// Root 会继续持有旧的 empty fallback，导致规则/历史永远不加载。
+    private let externalSession: CezzuSession?
+    @State private var ownedSession: CezzuSession = .empty()
     @State private var didInitializePersistentSession: Bool = false
 
-    public init() {}
+    /// 默认构造：内部自己创建空 session 并在 task 里初始化持久化容器（iOS / 正常单窗口路径）。
+    public init() {
+        self.externalSession = nil
+    }
+
+    /// 外部传入 session（主要用于 macOS App 持有 session 并同时支持独立播放器窗口）。
+    /// 调用方负责创建/替换 session；CezzuRoot 只读取，不再复制到自己的 @State。
+    public init(session: CezzuSession) {
+        self.externalSession = session
+    }
+
+    private var session: CezzuSession {
+        externalSession ?? ownedSession
+    }
 
     public var body: some View {
         CezzuRootContent(session: session)
@@ -18,9 +34,11 @@ public struct CezzuRoot: View {
             .environment(session.followStore)
             .environment(session.searchHistory)
             .task {
+                // 外部 session 由 App 持有并初始化，这里不要再碰。
+                guard externalSession == nil else { return }
                 guard !didInitializePersistentSession else { return }
                 didInitializePersistentSession = true
-                await initialize()
+                await initializeOwned()
             }
         #if os(macOS)
         .frame(minWidth: 900, minHeight: 600)
@@ -28,29 +46,8 @@ public struct CezzuRoot: View {
     }
 
     @MainActor
-    private func initialize() async {
-        do {
-            let container = try ModelContainer(
-                for: WatchHistoryEntry.self, FollowEntry.self, RuleSourceRecord.self,
-                SearchHistoryEntry.self
-            )
-            let context = container.mainContext
-            let sourceStore = RuleSourceStore(context: context)
-            let store = RuleStoreCoordinator(sourceStore: sourceStore)
-            let history = HistoryStore(context: context)
-            let followStore = FollowStore(context: context)
-            let searchHistory = SearchHistoryStore(context: context)
-            session = CezzuSession(
-                store: store,
-                history: history,
-                followStore: followStore,
-                searchHistory: searchHistory,
-                container: container,
-                shouldBootstrapAtLaunch: true
-            )
-        } catch {
-            // 持久化容器初始化失败时保留 fallback session，避免启动黑屏。
-        }
+    private func initializeOwned() async {
+        ownedSession = await CezzuSession.makePersistent()
     }
 }
 
@@ -108,6 +105,34 @@ public final class CezzuSession {
             container: container,
             shouldBootstrapAtLaunch: false
         )
+    }
+
+    /// 创建实际的持久化 session（用于 macOS 独立窗口等多窗口场景）。
+    /// 调用方需要在 @MainActor 上异步调用，并把结果传入 CezzuRoot 或直接注入环境。
+    public static func makePersistent() async -> CezzuSession {
+        do {
+            let container = try ModelContainer(
+                for: WatchHistoryEntry.self, FollowEntry.self, RuleSourceRecord.self,
+                SearchHistoryEntry.self
+            )
+            let context = container.mainContext
+            let sourceStore = RuleSourceStore(context: context)
+            let store = RuleStoreCoordinator(sourceStore: sourceStore)
+            let history = HistoryStore(context: context)
+            let followStore = FollowStore(context: context)
+            let searchHistory = SearchHistoryStore(context: context)
+            return CezzuSession(
+                store: store,
+                history: history,
+                followStore: followStore,
+                searchHistory: searchHistory,
+                container: container,
+                shouldBootstrapAtLaunch: true
+            )
+        } catch {
+            // 失败时回退到内存版，保持 App 可用
+            return .empty()
+        }
     }
 }
 
@@ -359,6 +384,8 @@ struct CompactRootView: View {
 struct SplitRootView: View {
     let session: CezzuSession
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.playerPresentationController) private var presentation
+    @Environment(\.openWindow) private var openWindow
     @State private var sidebarItem: SidebarItem? = .home
     @State private var path: [Route] = []
     @State private var searchModel: SearchViewModel
@@ -433,6 +460,8 @@ struct SplitRootView: View {
     }
 
     private var activePlayerRequest: PlaybackRequest? {
+        // macOS 独立窗口模式下，永远不让主窗口走“替换整个 UI”的播放器路径。
+        if presentation.prefersDedicatedWindow { return nil }
         guard case .player(let request) = path.last else { return nil }
         return request
     }
@@ -542,7 +571,7 @@ struct SplitRootView: View {
                     historyHint: historyEntry.map(historyHint(from:))
                 )
             ) { request, _ in
-                path.append(Route.player(request))
+                launchPlayer(request)
             } onTapTag: { tag in
                 searchModel.applyTag(tag)
                 Task { await searchModel.submit() }
@@ -557,7 +586,7 @@ struct SplitRootView: View {
                     historyHint: hint
                 )
             ) { request, _ in
-                path.append(Route.player(request))
+                launchPlayer(request)
             } onTapTag: { tag in
                 searchModel.applyTag(tag)
                 Task { await searchModel.submit() }
@@ -566,15 +595,28 @@ struct SplitRootView: View {
         case .episodes(let detail):
             if let rule = session.store.installedRules.first(where: { $0.name == detail.ruleName })?.rule {
                 EpisodeListView(detail: detail, rule: rule) { req in
-                    path.append(Route.player(req))
+                    launchPlayer(req)
                 }
             }
         case .player(let req):
-            PlayerView(
-                request: req,
-                coordinator: PlaybackCoordinator(history: session.history),
-                history: session.history
-            )
+            if presentation.prefersDedicatedWindow {
+                // Deep link 或残留 route：打开独立窗口，并清理主窗口的播放器 route
+                Color.clear
+                    .task {
+                        openWindow(id: "player", value: req)
+                        // 延迟一帧清理，避免导航状态竞争
+                        try? await Task.sleep(for: .milliseconds(50))
+                        if case .player = path.last {
+                            path.removeLast()
+                        }
+                    }
+            } else {
+                PlayerView(
+                    request: req,
+                    coordinator: PlaybackCoordinator(history: session.history),
+                    history: session.history
+                )
+            }
         default:
             EmptyView()
         }
@@ -590,5 +632,15 @@ struct SplitRootView: View {
             episodeTitle: entry.lastEpisodeTitle,
             positionMs: entry.lastPositionMs
         )
+    }
+
+    /// 根据当前 presentation 模式决定是打开独立播放器窗口还是在当前导航栈 push。
+    /// macOS 独立窗口模式下不会修改主窗口的 path，详情页保持可见。
+    private func launchPlayer(_ request: PlaybackRequest) {
+        if presentation.prefersDedicatedWindow {
+            openWindow(id: "player", value: request)
+        } else {
+            path.append(Route.player(request))
+        }
     }
 }

@@ -1,7 +1,7 @@
 import Foundation
 
 /// 一集（episode），属于某条线路（road）。
-public struct Episode: Hashable, Sendable, Identifiable {
+public struct Episode: Codable, Hashable, Sendable, Identifiable {
     public let id: UUID
     public var title: String
     public var url: URL
@@ -17,7 +17,7 @@ public struct Episode: Hashable, Sendable, Identifiable {
 
 /// 一条"线路"（road / mirror line）。当规则的 `muliSources = true` 时，
 /// 同一部番剧的详情页可能匹配多个 road，每个 road 是同一集的一组备用源。
-public struct EpisodeRoad: Hashable, Sendable, Identifiable {
+public struct EpisodeRoad: Codable, Hashable, Sendable, Identifiable {
     public let id: UUID
     public var index: Int
     public var label: String  // 人类可读名（"线路 1"、"线路 2"），由 UI 兜底
@@ -32,7 +32,7 @@ public struct EpisodeRoad: Hashable, Sendable, Identifiable {
 }
 
 /// 一部番剧的详情快照（从详情页抓出来的数据），主要用作 5 个屏幕之间传递的载体。
-public struct AnimeDetail: Hashable, Sendable, Identifiable {
+public struct AnimeDetail: Codable, Hashable, Sendable, Identifiable {
     public var id: URL { detailURL }
     public var title: String
     public var detailURL: URL

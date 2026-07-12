@@ -922,14 +922,20 @@ public struct PlayerPresentationController: Sendable {
     private let restoreDefaultImpl: @MainActor @Sendable () -> Void
     private let setSystemFullscreenImpl: @MainActor @Sendable (Bool) -> Void
 
+    /// macOS 专用：为 true 时播放请求会打开独立窗口，而不是在主窗口导航栈内替换。
+    /// 仅由 macOS App 入口注入，iOS / iPad 保持 false 以维持原行为。
+    public let prefersDedicatedWindow: Bool
+
     public init(
         requestLandscapePlayback: @escaping @MainActor @Sendable () -> Void = {},
         restoreDefaultPlaybackPresentation: @escaping @MainActor @Sendable () -> Void = {},
-        setSystemFullscreen: @escaping @MainActor @Sendable (Bool) -> Void = { _ in }
+        setSystemFullscreen: @escaping @MainActor @Sendable (Bool) -> Void = { _ in },
+        prefersDedicatedWindow: Bool = false
     ) {
         self.requestLandscapeImpl = requestLandscapePlayback
         self.restoreDefaultImpl = restoreDefaultPlaybackPresentation
         self.setSystemFullscreenImpl = setSystemFullscreen
+        self.prefersDedicatedWindow = prefersDedicatedWindow
     }
 
     @MainActor

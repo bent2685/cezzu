@@ -6,31 +6,73 @@ import SwiftUI
 struct CezzuApp: App {
     private let themeColor = Color(red: 231.0 / 255.0, green: 23.0 / 255.0, blue: 33.0 / 255.0)
 
+    /// macOS App 持有唯一 session，所有窗口（主窗口 + 独立播放器窗口）共享同一份 store / history。
+    /// 启动时为 nil，加载完成后再注入，避免 CezzuRoot 长时间卡在 empty fallback 导致无规则/无播源。
+    @State private var session: CezzuSession?
+
     var body: some Scene {
+        // 主窗口：正常使用 CezzuRoot，传入共享 session
         WindowGroup {
-            CezzuRoot()
-                .environment(\.playerPresentationController, PlayerPresentationController(
-                    restoreDefaultPlaybackPresentation: {
-                        guard let window = NSApp.keyWindow ?? NSApp.mainWindow else { return }
-                        if window.styleMask.contains(.fullScreen) {
-                            window.toggleFullScreen(nil)
+            Group {
+                if let session {
+                    CezzuRoot(session: session)
+                        .environment(\.playerPresentationController, makePresentationController())
+                        .environment(\.playerInteractionController, makeInteractionController())
+                        .tint(themeColor)
+                } else {
+                    ProgressView("正在启动…")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .task {
+                            session = await CezzuSession.makePersistent()
                         }
-                    },
-                    setSystemFullscreen: { fullscreen in
-                        guard let window = NSApp.keyWindow ?? NSApp.mainWindow else { return }
-                        if window.styleMask.contains(.fullScreen) != fullscreen {
-                            window.toggleFullScreen(nil)
-                        }
-                    }
-                ))
-                .environment(\.playerInteractionController, PlayerInteractionController(
-                    makeOverlay: { actions in
-                        AnyView(PlayerKeyboardInteractionOverlay(actions: actions))
-                    }
-                ))
-                .tint(themeColor)
+                }
+            }
         }
         .defaultSize(width: 1200, height: 800)
         .windowResizability(.contentMinSize)
+
+        // 独立播放器窗口：macOS 专用，关闭此窗口不影响主 App 窗口
+        WindowGroup(id: "player", for: PlaybackRequest.self) { $request in
+            if let request, let session {
+                PlayerView(
+                    request: request,
+                    coordinator: PlaybackCoordinator(history: session.history),
+                    history: session.history
+                )
+                .environment(session.store)
+                .environment(session.history)
+                .environment(\.playerPresentationController, makePresentationController())
+                .environment(\.playerInteractionController, makeInteractionController())
+                .tint(themeColor)
+            }
+        }
+        .defaultSize(width: 1280, height: 720)
+        .windowResizability(.contentMinSize)
+    }
+
+    private func makePresentationController() -> PlayerPresentationController {
+        PlayerPresentationController(
+            restoreDefaultPlaybackPresentation: {
+                guard let window = NSApp.keyWindow ?? NSApp.mainWindow else { return }
+                if window.styleMask.contains(.fullScreen) {
+                    window.toggleFullScreen(nil)
+                }
+            },
+            setSystemFullscreen: { fullscreen in
+                guard let window = NSApp.keyWindow ?? NSApp.mainWindow else { return }
+                if window.styleMask.contains(.fullScreen) != fullscreen {
+                    window.toggleFullScreen(nil)
+                }
+            },
+            prefersDedicatedWindow: true
+        )
+    }
+
+    private func makeInteractionController() -> PlayerInteractionController {
+        PlayerInteractionController(
+            makeOverlay: { actions in
+                AnyView(PlayerKeyboardInteractionOverlay(actions: actions))
+            }
+        )
     }
 }
