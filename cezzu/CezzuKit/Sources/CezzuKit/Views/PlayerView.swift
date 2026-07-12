@@ -29,7 +29,7 @@ public struct PlayerView: View {
 
     @State private var showResumePrompt: Bool = false
     @State private var isImmersive: Bool = false
-    @State private var controlsVisible: Bool = true
+    @State private var controlsVisible: Bool = false
     @State private var centerControlsMode: PlayerCenterControlsMode = .standard
     @State private var isSourcePanelPresented: Bool = false
     @State private var isDanmakuSettingsPresented: Bool = false
@@ -250,11 +250,20 @@ public struct PlayerView: View {
         .onChange(of: coordinator.phase) { _, newPhase in
             switch newPhase {
             case .playing:
+                // 首帧未就绪时 isLoadingVisible 仍为 true，reveal 只会记下可见意图，
+                // 真正露出要等 isBuffering 落下后的 onChange。
                 revealControlsTemporarily()
-            case .paused, .failed, .finished, .idle, .extracting, .loading:
+            case .paused, .failed, .finished:
                 autoHideTask?.cancel()
                 controlsVisible = true
+            case .idle, .extracting, .loading:
+                autoHideTask?.cancel()
+                controlsVisible = false
             }
+        }
+        .onChange(of: coordinator.backend.isBuffering) { _, isBuffering in
+            guard !isBuffering, coordinator.phase == .playing else { return }
+            revealControlsTemporarily()
         }
         .onChange(of: coordinator.backend.currentTime) { _, newTime in
             scrubbingState.syncPlaybackTime(newTime)
@@ -329,19 +338,19 @@ public struct PlayerView: View {
 
     private var isLoadingVisible: Bool {
         switch coordinator.phase {
-        case .extracting, .loading:
+        case .idle, .extracting, .loading:
             return true
         case .failed:
             return false
-        case .idle, .playing, .paused, .finished:
+        case .playing, .paused, .finished:
             return coordinator.backend.isBuffering
         }
     }
 
     private var loadingMessage: String {
         switch coordinator.phase {
+        case .idle, .loading: return "正在载入视频…"
         case .extracting: return "正在提取播放源…"
-        case .loading: return "正在载入视频…"
         default: return coordinator.backend.isBuffering ? "缓冲中…" : ""
         }
     }

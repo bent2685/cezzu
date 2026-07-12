@@ -51,4 +51,36 @@ struct PlayerOverlayVisibilityTests {
         #expect(visibility.showsBottomControls)
         #expect(!visibility.showsTemporaryBoostBadge)
     }
+
+    @Test("loading hides playback controls but keeps top bar for dismiss")
+    func loadingHidesPlaybackControls() {
+        let visibility = PlayerOverlayVisibility(
+            controlsVisible: true,
+            isTemporaryBoosting: false,
+            isSourcePanelPresented: false,
+            isLoadingVisible: true,
+            phase: .loading
+        )
+
+        #expect(!visibility.showsCenterPlaybackControls)
+        #expect(visibility.showsTopBar)
+        #expect(!visibility.showsBottomControls)
+        #expect(!visibility.showsTemporaryBoostBadge)
+    }
+
+    @Test("buffering during playback hides playback controls but keeps top bar")
+    func bufferingDuringPlaybackHidesPlaybackControls() {
+        let visibility = PlayerOverlayVisibility(
+            controlsVisible: false,
+            isTemporaryBoosting: false,
+            isSourcePanelPresented: false,
+            isLoadingVisible: true,
+            phase: .playing
+        )
+
+        #expect(!visibility.showsCenterPlaybackControls)
+        #expect(visibility.showsTopBar)
+        #expect(!visibility.showsBottomControls)
+        #expect(!visibility.showsTemporaryBoostBadge)
+    }
 }

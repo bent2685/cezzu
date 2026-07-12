@@ -12,11 +12,14 @@ struct PlayerOverlayVisibility {
     }
 
     var showsTopBar: Bool {
-        controlsVisible && !isTemporaryBoosting
+        guard !isTemporaryBoosting else { return false }
+        // 载入中仍露出顶栏（含关闭按钮），避免提取/缓冲阶段用户无法退出。
+        if isLoadingVisible { return true }
+        return controlsVisible
     }
 
     var showsBottomControls: Bool {
-        !isTemporaryBoosting && (controlsVisible || phase != .playing || isLoadingVisible)
+        !isTemporaryBoosting && !isLoadingVisible && (controlsVisible || phase != .playing)
     }
 
     var showsTemporaryBoostBadge: Bool {
