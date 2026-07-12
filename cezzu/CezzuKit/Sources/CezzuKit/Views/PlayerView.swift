@@ -119,7 +119,17 @@ public struct PlayerView: View {
                                     .lineLimit(1)
                             }
                             .foregroundStyle(.white)
-                            Spacer()
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            Text(
+                                DownloadSpeedFormatter.format(
+                                    bytesPerSecond: coordinator.backend.downloadSpeedBps
+                                )
+                            )
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.white.opacity(0.9))
+                            .fixedSize(horizontal: true, vertical: false)
+                            .layoutPriority(1)
+                            .accessibilityLabel("下行速度")
                             legacyCircularControlButton(
                                 systemImage: "text.bubble",
                                 size: 42,

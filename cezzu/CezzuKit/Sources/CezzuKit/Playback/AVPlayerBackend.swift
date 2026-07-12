@@ -17,6 +17,8 @@ public final class AVPlayerBackend: VideoPlayerBackend {
     /// 由 KVO 而不是 periodic time observer 驱动 —— 后者只在播放时钟前进时回调，
     /// 缓冲时时钟正好冻结，会错过所有该亮 spinner 的瞬间。
     public private(set) var isBuffering: Bool = false
+    /// 平滑后的下行吞吐（B/s）。`nil` 表示暂无有效采样（显示「—」）。
+    public private(set) var downloadSpeedBps: Double?
     public var rate: Float { player.rate }
 
     private var timeObserverToken: Any?
@@ -24,6 +26,8 @@ public final class AVPlayerBackend: VideoPlayerBackend {
     private var currentItemObservation: NSKeyValueObservation?
     private var bufferEmptyObservation: NSKeyValueObservation?
     private var likelyToKeepUpObservation: NSKeyValueObservation?
+    private var speedSampler = DownloadSpeedSampler()
+    private var speedTimer: Timer?
 
     /// AVPlayer 没有"正在 seek"信号，`timeControlStatus` 也不会因为 seek 翻成
     /// `.waitingToPlayAtSpecifiedRate`，所以 KVO 抓不到。由 `seek(to:)` 自己维护。
@@ -33,6 +37,7 @@ public final class AVPlayerBackend: VideoPlayerBackend {
         self.player = player
         installTimeObserver()
         installStateObservers()
+        installSpeedTimer()
     }
 
     /// 调用方应该在销毁前调用此方法。`deinit` 不能访问 MainActor 状态，
@@ -50,6 +55,8 @@ public final class AVPlayerBackend: VideoPlayerBackend {
         bufferEmptyObservation = nil
         likelyToKeepUpObservation?.invalidate()
         likelyToKeepUpObservation = nil
+        speedTimer?.invalidate()
+        speedTimer = nil
         unload()
     }
 
@@ -68,6 +75,38 @@ public final class AVPlayerBackend: VideoPlayerBackend {
                 }
             }
         }
+    }
+
+    /// 下行速度必须用墙钟定时器：播放缓冲时 AVPlayer 时钟冻结，periodic observer 不会回调。
+    private func installSpeedTimer() {
+        let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.refreshDownloadSpeed()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        speedTimer = timer
+    }
+
+    private func refreshDownloadSpeed() {
+        let now = ProcessInfo.processInfo.systemUptime
+        if let event = player.currentItem?.accessLog()?.events.last,
+           event.numberOfBytesTransferred >= 0,
+           event.observedBitrate > 0
+        {
+            downloadSpeedBps = speedSampler.update(
+                bytesTransferred: event.numberOfBytesTransferred,
+                observedBitrate: event.observedBitrate,
+                at: now
+            )
+        } else {
+            downloadSpeedBps = speedSampler.currentSpeed(at: now)
+        }
+    }
+
+    private func resetDownloadSpeed() {
+        speedSampler.reset()
+        downloadSpeedBps = nil
     }
 
     /// 状态事件 KVO：`timeControlStatus` 立刻反映 .waitingToPlayAtSpecifiedRate，
@@ -132,6 +171,7 @@ public final class AVPlayerBackend: VideoPlayerBackend {
     // MARK: VideoPlayerBackend
 
     public func load(url: URL, headers: [String: String], startAt: TimeInterval) async {
+        resetDownloadSpeed()
         let asset: AVURLAsset
         if headers.isEmpty {
             asset = AVURLAsset(url: url)
@@ -174,5 +214,6 @@ public final class AVPlayerBackend: VideoPlayerBackend {
     public func unload() {
         player.pause()
         player.replaceCurrentItem(with: nil)
+        resetDownloadSpeed()
     }
 }
