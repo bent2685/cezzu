@@ -1,17 +1,44 @@
 import SwiftUI
 
-/// 固定列数的番剧宫格。避免 `adaptive` 和 `GeometryReader` 在滚动容器里
-/// 导致 cell 宽度不一致或内容高度塌陷。
-public struct BangumiGrid<Footer: View>: View {
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+/// 番剧宫格布局参数。按「固定 item 首选宽度」让 `LazyVGrid` 自适应列数。
+enum BangumiGridLayout {
+    static let horizontalSpacing: CGFloat = 14
+    static let verticalSpacing: CGFloat = 18
+    /// 单卡最小宽度。列数 = 容器能放下多少个 ≥ 此宽度的 cell。
+    static let preferredItemWidth: CGFloat = 150
+    /// 单卡最大宽度。剩余空间不够再塞一列时，cell 最多涨到这里，避免被拉成海报墙。
+    static let maximumItemWidth: CGFloat = 200
 
+    static var columns: [GridItem] {
+        [
+            GridItem(
+                .adaptive(minimum: preferredItemWidth, maximum: maximumItemWidth),
+                spacing: horizontalSpacing,
+                alignment: .top
+            )
+        ]
+    }
+
+    /// 根据容器可用宽度估算列数（测试 / 调试用；真实布局交给 `GridItem.adaptive`）。
+    ///
+    /// 公式：`n * preferred + (n - 1) * spacing ≤ width`
+    /// → `n ≤ (width + spacing) / (preferred + spacing)`
+    static func columnCount(forWidth width: CGFloat) -> Int {
+        let minimumColumnCount = 1
+        guard width.isFinite, width > 0 else { return minimumColumnCount }
+        let unit = preferredItemWidth + horizontalSpacing
+        let raw = Int(floor((width + horizontalSpacing) / unit))
+        return max(minimumColumnCount, raw)
+    }
+}
+
+/// 响应式番剧宫格。用 `GridItem.adaptive` 按首选宽度自动算列数；
+/// footer 放在 grid 下方，避免再依赖 GeometryReader 量宽（ScrollView 里容易量错、锁死 2 列）。
+public struct BangumiGrid<Footer: View>: View {
     private let items: [BangumiItem]
     private let onTapItem: (BangumiItem) -> Void
     private let onLoadMore: (BangumiItem) async -> Void
     private let footer: Footer
-
-    private let horizontalSpacing: CGFloat = 14
-    private let verticalSpacing: CGFloat = 18
 
     public init(
         items: [BangumiItem],
@@ -26,33 +53,29 @@ public struct BangumiGrid<Footer: View>: View {
     }
 
     public var body: some View {
-        let columns = Array(
-            repeating: GridItem(.flexible(minimum: 0, maximum: .infinity), spacing: horizontalSpacing, alignment: .top),
-            count: columnCount
-        )
-
-        LazyVGrid(columns: columns, alignment: .leading, spacing: verticalSpacing) {
-            ForEach(items) { item in
-                Button {
-                    onTapItem(item)
-                } label: {
-                    BangumiCard(item: item)
-                }
-                .buttonStyle(.plain)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-                .contentShape(Rectangle())
-                .clipped()
-                .task {
-                    await onLoadMore(item)
+        VStack(alignment: .leading, spacing: BangumiGridLayout.verticalSpacing) {
+            LazyVGrid(
+                columns: BangumiGridLayout.columns,
+                alignment: .leading,
+                spacing: BangumiGridLayout.verticalSpacing
+            ) {
+                ForEach(items) { item in
+                    Button {
+                        onTapItem(item)
+                    } label: {
+                        BangumiCard(item: item)
+                    }
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .contentShape(Rectangle())
+                    .clipped()
+                    .task {
+                        await onLoadMore(item)
+                    }
                 }
             }
             footer
-                .gridCellColumns(columnCount)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var columnCount: Int {
-        horizontalSizeClass == .compact ? 2 : 4
     }
 }

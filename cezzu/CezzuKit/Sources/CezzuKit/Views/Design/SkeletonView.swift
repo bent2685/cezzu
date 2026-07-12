@@ -56,25 +56,20 @@ public struct BangumiCardSkeleton: View {
     }
 }
 
-/// 番剧宫格的骨架版本。和 `BangumiGrid` 同样的列数与间距，渲染 N 个占位卡。
+/// 番剧宫格的骨架版本。和 `BangumiGrid` 共用 `BangumiGridLayout.columns`，渲染 N 个占位卡。
 public struct BangumiSkeletonGrid: View {
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-
     private let placeholderCount: Int
-    private let horizontalSpacing: CGFloat = 14
-    private let verticalSpacing: CGFloat = 18
 
     public init(placeholderCount: Int = 8) {
         self.placeholderCount = placeholderCount
     }
 
     public var body: some View {
-        let columnCount = horizontalSizeClass == .compact ? 2 : 4
-        let columns = Array(
-            repeating: GridItem(.flexible(minimum: 0, maximum: .infinity), spacing: horizontalSpacing, alignment: .top),
-            count: columnCount
-        )
-        LazyVGrid(columns: columns, alignment: .leading, spacing: verticalSpacing) {
+        LazyVGrid(
+            columns: BangumiGridLayout.columns,
+            alignment: .leading,
+            spacing: BangumiGridLayout.verticalSpacing
+        ) {
             ForEach(0..<placeholderCount, id: \.self) { _ in
                 BangumiCardSkeleton()
             }
