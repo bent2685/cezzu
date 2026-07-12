@@ -1,7 +1,9 @@
 import Foundation
 
-/// 首启离线种子加载器：把 SwiftPM resources 里的 `SeedRules/` 目录复制进
-/// 本地 `plugins.json`。只跑一次（之后即使删光本地规则也不再 re-seed）。
+/// 离线种子加载器：把 SwiftPM resources 里的 `SeedRules/` 同步进本地 `plugins.json`。
+///
+/// - 首启（`plugins.json` 不存在）：整表写入
+/// - 之后每次 bootstrap：与种子对账 —— 补齐新增、按 version 更新、移除已弃用的官方种子规则
 public struct SeededRuleLoader: Sendable {
     private let bundle: Bundle
 
@@ -61,5 +63,59 @@ public struct SeededRuleLoader: Sendable {
             )
         }
         try await localStore.save(payload)
+    }
+
+    /// 将本地已安装的**官方种子规则**与当前 App 内置 `SeedRules/` 对账。
+    ///
+    /// - 种子里有、本地没有 → 安装（默认启用）
+    /// - 两边都有但 `version` 不同 → 用种子覆盖，保留用户的 `isEnabled`
+    /// - 本地有、种子已弃用/移除，且 `sourceID` 是官方或 `nil`（首启种子）→ 卸载
+    /// - 其它源安装的规则不动
+    public func reconcileOfficialSeed(into localStore: LocalRuleStore) async throws {
+        let seedRules = try loadSeedRules()
+        guard !seedRules.isEmpty else { return }
+
+        let officialID = RuleSource.cezzuRuleOfficial.id
+        let seedByName = Dictionary(uniqueKeysWithValues: seedRules.map { ($0.name, $0) })
+        let seedNames = Set(seedByName.keys)
+
+        var items = try await localStore.load()
+        var changed = false
+
+        // 1) 移除已不在种子 active 集里的官方规则（例如 LMM / yishijie）
+        let beforeCount = items.count
+        items.removeAll { item in
+            let fromOfficial = item.sourceID == nil || item.sourceID == officialID
+            return fromOfficial && !seedNames.contains(item.rule.name)
+        }
+        if items.count != beforeCount { changed = true }
+
+        // 2) 补齐 / 更新种子规则
+        for (name, seed) in seedByName {
+            if let idx = items.firstIndex(where: { $0.rule.name == name }) {
+                let existing = items[idx]
+                if existing.rule.version != seed.version {
+                    items[idx] = LocalRuleStore.InstalledRulePersisted(
+                        rule: seed,
+                        sourceID: officialID,
+                        isEnabled: existing.isEnabled
+                    )
+                    changed = true
+                }
+            } else {
+                items.append(
+                    LocalRuleStore.InstalledRulePersisted(
+                        rule: seed,
+                        sourceID: officialID,
+                        isEnabled: true
+                    )
+                )
+                changed = true
+            }
+        }
+
+        if changed {
+            try await localStore.save(items)
+        }
     }
 }

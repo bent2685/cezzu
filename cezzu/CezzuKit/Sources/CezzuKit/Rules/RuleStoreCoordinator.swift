@@ -40,11 +40,13 @@ public final class RuleStoreCoordinator {
         self.seedLoader = seedLoader
     }
 
-    /// App 启动时调用一次。种子规则源、首启离线种子规则、然后加载内存视图。
+    /// App 启动时调用一次。种子规则源、首启离线种子、与内置 SeedRules 对账，然后加载内存视图。
     public func bootstrap() async {
         do {
             try sourceStore.ensureSeedSources()
             try await seedLoader.seedIfNeeded(into: localStore)
+            // 非首启也会跑：补新源、更新 version、卸掉种子里已弃用的官方规则
+            try await seedLoader.reconcileOfficialSeed(into: localStore)
             try await reloadAll()
         } catch {
             lastError = "bootstrap 失败：\(error)"
