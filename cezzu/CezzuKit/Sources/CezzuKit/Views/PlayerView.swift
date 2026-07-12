@@ -99,53 +99,56 @@ public struct PlayerView: View {
 
             if overlayVisibility.showsTopBar {
                 VStack {
-                    HStack(spacing: 12) {
-                        legacyCircularControlButton(
-                            systemImage: "chevron.backward",
-                            size: 42,
-                            font: .subheadline
-                        ) {
-                            close()
-                        }
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(activeRequest.anime.title)
-                                .font(.subheadline.weight(.semibold))
-                                .lineLimit(1)
-                            Text(activeRequest.episode.title)
-                                .font(.caption)
-                                .foregroundStyle(.white.opacity(0.82))
-                                .lineLimit(1)
-                        }
-                        .foregroundStyle(.white)
-                        Spacer()
-                        legacyCircularControlButton(
-                            systemImage: "text.bubble",
-                            size: 42,
-                            font: .subheadline
-                        ) {
-                            presentDanmakuSettings()
-                        }
-                        if interaction.showsOneHandModeToggle {
+                    ZStack(alignment: .top) {
+                        topControlsGradient
+                        HStack(spacing: 12) {
                             legacyCircularControlButton(
-                                systemImage: centerControlsMode == .oneHanded
-                                    ? "rectangle.center.inset.filled"
-                                    : "hand.point.left.fill",
+                                systemImage: "chevron.backward",
                                 size: 42,
                                 font: .subheadline
                             ) {
-                                toggleCenterControlsMode()
+                                close()
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(activeRequest.anime.title)
+                                    .font(.subheadline.weight(.semibold))
+                                    .lineLimit(1)
+                                Text(activeRequest.episode.title)
+                                    .font(.caption)
+                                    .foregroundStyle(.white.opacity(0.82))
+                                    .lineLimit(1)
+                            }
+                            .foregroundStyle(.white)
+                            Spacer()
+                            legacyCircularControlButton(
+                                systemImage: "text.bubble",
+                                size: 42,
+                                font: .subheadline
+                            ) {
+                                presentDanmakuSettings()
+                            }
+                            if interaction.showsOneHandModeToggle {
+                                legacyCircularControlButton(
+                                    systemImage: centerControlsMode == .oneHanded
+                                        ? "rectangle.center.inset.filled"
+                                        : "hand.point.left.fill",
+                                    size: 42,
+                                    font: .subheadline
+                                ) {
+                                    toggleCenterControlsMode()
+                                }
+                            }
+                            legacyCircularControlButton(
+                                systemImage: "rectangle.stack.badge.play",
+                                size: 42,
+                                font: .subheadline
+                            ) {
+                                toggleSourcePanel()
                             }
                         }
-                        legacyCircularControlButton(
-                            systemImage: "rectangle.stack.badge.play",
-                            size: 42,
-                            font: .subheadline
-                        ) {
-                            toggleSourcePanel()
-                        }
+                        .padding(.horizontal, 20)
+                        .padding(.top, 18)
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 18)
                     Spacer()
                 }
                 .transition(.opacity)
@@ -512,6 +515,23 @@ public struct PlayerView: View {
                 content()
             }
         }
+    }
+
+    private var topControlsGradient: some View {
+        LinearGradient(
+            stops: [
+                .init(color: .black.opacity(0.72), location: 0),
+                .init(color: .black.opacity(0.38), location: 0.38),
+                .init(color: .black.opacity(0.14), location: 0.72),
+                .init(color: .clear, location: 1),
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .frame(maxWidth: .infinity)
+        .frame(height: 168)
+        .ignoresSafeArea(edges: .top)
+        .allowsHitTesting(false)
     }
 
     private var bottomControlsGradient: some View {
