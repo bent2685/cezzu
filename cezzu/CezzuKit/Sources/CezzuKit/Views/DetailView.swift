@@ -719,11 +719,9 @@ public struct DetailView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
                         hero(viewportSize: proxy.size)
-                        VStack(alignment: .leading, spacing: 28) {
-                            if !model.tags.isEmpty {
-                                tagListSection
-                            }
-                            tabs
+                        VStack(alignment: .leading, spacing: 0) {
+                            contentTabBar
+                                .padding(.bottom, 28)
                             tabContent
                         }
                         .frame(maxWidth: 1080, alignment: .leading)
@@ -1114,143 +1112,185 @@ public struct DetailView: View {
         followStore.contains(model.item)
     }
 
+    // MARK: - Content below hero
+
     @ViewBuilder
-    private var tabs: some View {
+    private var contentTabBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
+            HStack(spacing: 4) {
                 ForEach(DetailTab.allCases, id: \.self) { tab in
                     let selected = model.selectedTab == tab
                     Button {
                         Task { await model.selectTab(tab) }
                     } label: {
-                        VStack(spacing: 8) {
-                            Text(tab.title)
-                                .font(.subheadline.weight(.bold))
-                                .foregroundStyle(selected ? palette.textPrimary : palette.textSecondary)
-                            Rectangle()
-                                .fill(selected ? DetailStyle.netflixRed : Color.clear)
-                                .frame(height: 3)
-                        }
-                        .frame(minWidth: 72)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 8)
+                        Text(tab.title)
+                            .font(.subheadline.weight(selected ? .semibold : .medium))
+                            .foregroundStyle(selected ? palette.textPrimary : palette.textTertiary)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .frame(minHeight: 36)
+                            .background {
+                                Capsule(style: .continuous)
+                                    .fill(selected ? palette.surfaceRaised : Color.clear)
+                                    .overlay {
+                                        if selected {
+                                            Capsule(style: .continuous)
+                                                .strokeBorder(palette.hairline, lineWidth: 1)
+                                        }
+                                    }
+                                    .shadow(
+                                        color: selected
+                                            ? .black.opacity(colorScheme == .dark ? 0.35 : 0.08)
+                                            : .clear,
+                                        radius: 8,
+                                        y: 2
+                                    )
+                            }
+                            .contentShape(Capsule(style: .continuous))
                     }
                     .buttonStyle(.plain)
+                    .animation(.easeOut(duration: 0.18), value: selected)
                 }
             }
-            .padding(.vertical, 2)
-        }
-    }
-
-    @ViewBuilder
-    private var tagListSection: some View {
-        overviewSection(title: "标签") {
-            WrapLayout(spacing: 8, lineSpacing: 8) {
-                ForEach(model.tags, id: \.name) { tag in
-                    Button {
-                        onTapTag(tag.name)
-                    } label: {
-                        HStack(spacing: 6) {
-                            Text(tag.name)
-                            Text("\(tag.count)")
-                                .foregroundStyle(palette.textTertiary)
-                        }
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(palette.textSecondary)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(
-                            palette.surfaceRaised.opacity(0.88),
-                            in: RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
-                        )
-                        .overlay {
-                            RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
-                                .stroke(palette.hairline, lineWidth: 1)
-                        }
+            .padding(5)
+            .background {
+                Capsule(style: .continuous)
+                    .fill(palette.surface.opacity(colorScheme == .dark ? 0.55 : 0.72))
+                    .overlay {
+                        Capsule(style: .continuous)
+                            .strokeBorder(palette.hairline.opacity(0.7), lineWidth: 1)
                     }
-                    .buttonStyle(.plain)
-                }
             }
         }
+        .scrollClipDisabled()
     }
 
     @ViewBuilder
     private var tabContent: some View {
-        if model.loadingCurrentTab {
-            centeredPanel {
-                ProgressView("加载中…")
-            }
-        } else if let error = model.currentTabError {
-            centeredPanel {
-                VStack(spacing: 10) {
-                    Label("加载失败", systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.orange)
-                    Text(error)
-                        .font(.caption)
-                        .foregroundStyle(palette.textSecondary)
-                        .multilineTextAlignment(.center)
+        Group {
+            if model.loadingCurrentTab {
+                contentStatus(
+                    systemImage: "arrow.triangle.2.circlepath",
+                    title: "加载中",
+                    message: "正在获取内容…"
+                ) {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            } else if let error = model.currentTabError {
+                contentStatus(
+                    systemImage: "exclamationmark.triangle.fill",
+                    title: "加载失败",
+                    message: error
+                )
+            } else {
+                switch model.selectedTab {
+                case .overview:
+                    overviewContent
+                case .comments:
+                    commentsContent
+                case .characters:
+                    charactersContent
+                case .reviews:
+                    reviewsContent
+                case .staff:
+                    staffContent
                 }
             }
-        } else {
-            switch model.selectedTab {
-            case .overview:
-                overviewContent
-            case .comments:
-                commentsContent
-            case .characters:
-                charactersContent
-            case .reviews:
-                reviewsContent
-            case .staff:
-                staffContent
-            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(.easeInOut(duration: 0.2), value: model.selectedTab)
     }
+
+    // MARK: Overview
 
     @ViewBuilder
     private var overviewContent: some View {
-        VStack(spacing: 24) {
+        VStack(alignment: .leading, spacing: 36) {
+            watchModule
+
             if !model.item.summary.isEmpty {
-                overviewSection(title: "简介") {
+                contentModule(eyebrow: "ABOUT", title: "简介") {
                     ExpandableSummary(
                         text: model.item.summary,
-                        collapsedLineLimit: 6,
+                        collapsedLineLimit: 5,
                         textColor: palette.textSecondary,
                         accentColor: palette.textPrimary
                     )
                 }
             }
 
-            overviewSection(title: "播放源") {
-                sourcesContent
+            if !model.tags.isEmpty {
+                contentModule(eyebrow: "TAGS", title: "标签") {
+                    tagCloud
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var watchModule: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("WATCH")
+                        .font(.caption.weight(.semibold))
+                        .tracking(1.2)
+                        .foregroundStyle(palette.textTertiary)
+                    Text("选集播放")
+                        .font(.title2.weight(.bold))
+                        .foregroundStyle(palette.textPrimary)
+                }
+                Spacer(minLength: 12)
+                if !model.currentEpisodes.isEmpty {
+                    Text("\(model.currentEpisodes.count) 集")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(palette.textTertiary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(palette.surfaceRaised, in: Capsule(style: .continuous))
+                }
             }
 
-            overviewSection(title: "选集") {
+            VStack(alignment: .leading, spacing: 20) {
+                sourceRail
                 episodesContent
             }
+            .padding(18)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                RoundedRectangle(cornerRadius: DetailContentStyle.moduleRadius, style: .continuous)
+                    .fill(palette.surface.opacity(colorScheme == .dark ? 0.72 : 0.88))
+            }
+            .clipShape(RoundedRectangle(cornerRadius: DetailContentStyle.moduleRadius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: DetailContentStyle.moduleRadius, style: .continuous)
+                    .strokeBorder(palette.hairline, lineWidth: 1)
+            }
         }
     }
 
     @ViewBuilder
-    private func overviewSection<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+    private var sourceRail: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(title)
-                .font(.title3.weight(.bold))
-                .foregroundStyle(palette.textPrimary)
-            centeredPanel(content: content)
-        }
-    }
-
-    @ViewBuilder
-    private var sourcesContent: some View {
-        if model.isSearchingSources && model.sources.isEmpty && model.blockedSources.isEmpty {
-            ProgressView("正在匹配可播放源…")
-                .tint(palette.textPrimary)
-        } else if model.sources.isEmpty && model.blockedSources.isEmpty {
-            Text(model.sourceSearchFailed ?? "暂无可播放源")
+            Text("播放源")
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(palette.textSecondary)
-        } else {
-            VStack(alignment: .leading, spacing: 14) {
+
+            if model.isSearchingSources && model.sources.isEmpty && model.blockedSources.isEmpty {
+                HStack(spacing: 10) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("正在匹配可播放源…")
+                        .font(.subheadline)
+                        .foregroundStyle(palette.textTertiary)
+                }
+                .padding(.vertical, 4)
+            } else if model.sources.isEmpty && model.blockedSources.isEmpty {
+                Label(model.sourceSearchFailed ?? "暂无可播放源", systemImage: "antenna.radiowaves.left.and.right.slash")
+                    .font(.subheadline)
+                    .foregroundStyle(palette.textTertiary)
+            } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         ForEach(model.sources) { source in
@@ -1259,52 +1299,57 @@ public struct DetailView: View {
                                 Task { await model.selectSource(source.id) }
                             } label: {
                                 Text(source.ruleName)
-                                    .font(.subheadline.weight(.bold))
-                                    .foregroundStyle(isSelected ? .white : palette.textSecondary)
+                                    .font(.subheadline.weight(isSelected ? .semibold : .medium))
+                                    .foregroundStyle(isSelected ? palette.textPrimary : palette.textSecondary)
                                     .padding(.horizontal, 14)
-                                    .padding(.vertical, 10)
-                                    .background(
-                                        isSelected ? DetailStyle.netflixRed.opacity(0.92) : palette.surfaceRaised,
-                                        in: RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
-                                    )
-                                    .overlay {
-                                        RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
-                                            .stroke(isSelected ? DetailStyle.netflixRed : palette.hairline, lineWidth: 1)
+                                    .padding(.vertical, 9)
+                                    .background {
+                                        Capsule(style: .continuous)
+                                            .fill(isSelected ? palette.surfaceRaised : Color.clear)
                                     }
+                                    .overlay {
+                                        Capsule(style: .continuous)
+                                            .strokeBorder(
+                                                isSelected ? palette.hairline : palette.hairline.opacity(0.55),
+                                                lineWidth: 1
+                                            )
+                                    }
+                                    .contentShape(Capsule(style: .continuous))
                             }
                             .buttonStyle(.plain)
                         }
+
                         ForEach(model.blockedSources) { blocked in
                             Button {
                                 model.openCaptcha(for: blocked.ruleName)
                             } label: {
                                 HStack(spacing: 6) {
                                     Image(systemName: "lock.shield")
-                                        .font(.caption.weight(.bold))
+                                        .font(.caption.weight(.semibold))
                                     Text(blocked.ruleName)
-                                        .font(.subheadline.weight(.bold))
+                                        .font(.subheadline.weight(.medium))
                                 }
-                                .foregroundStyle(palette.textSecondary.opacity(0.7))
+                                .foregroundStyle(palette.textTertiary)
                                 .padding(.horizontal, 14)
-                                .padding(.vertical, 10)
-                                .background(
-                                    palette.surfaceRaised.opacity(0.4),
-                                    in: RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
-                                )
+                                .padding(.vertical, 9)
                                 .overlay {
-                                    RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
-                                        .stroke(palette.hairline.opacity(0.6), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                                    Capsule(style: .continuous)
+                                        .strokeBorder(
+                                            palette.hairline.opacity(0.7),
+                                            style: StrokeStyle(lineWidth: 1, dash: [4, 3])
+                                        )
                                 }
+                                .contentShape(Capsule(style: .continuous))
                             }
                             .buttonStyle(.plain)
                             .help("需要验证码，点击完成人机校验")
                         }
                     }
-                    .padding(.vertical, 2)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 if case .failed(let message) = model.selectedSourceState {
-                    Text(message)
+                    Label(message, systemImage: "exclamationmark.circle")
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
@@ -1314,157 +1359,255 @@ public struct DetailView: View {
 
     @ViewBuilder
     private var episodesContent: some View {
-        switch model.selectedSourceState {
-        case .idle:
-            Text("请选择一个播放源。")
+        VStack(alignment: .leading, spacing: 14) {
+            Text("剧集")
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(palette.textSecondary)
-        case .loading:
-            ProgressView("正在拉取剧集…")
-                .tint(palette.textPrimary)
-        case .failed(let message):
-            VStack(alignment: .leading, spacing: 8) {
-                Label("剧集加载失败", systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.orange)
-                Text(message)
-                    .font(.caption)
-                    .foregroundStyle(palette.textSecondary)
-            }
-        case .loaded(let detail):
-            let episodes = model.currentEpisodes
-            let pageSize = 100
-            let totalPages = max(1, (episodes.count + pageSize - 1) / pageSize)
-            let safePage = min(episodePage, totalPages - 1)
-            let pageStart = safePage * pageSize
-            let pageEnd = min(pageStart + pageSize, episodes.count)
 
-            VStack(alignment: .leading, spacing: 16) {
-                if detail.roads.count > 1 {
-                    FlowLayout(horizontalSpacing: 8, verticalSpacing: 8) {
-                        ForEach(detail.roads.indices, id: \.self) { index in
-                            let isSelected = model.selectedRoadIndex == index
-                            Button {
-                                model.selectRoad(index)
-                                episodePage = 0
-                            } label: {
-                                Text(detail.roads[index].label)
-                                    .font(.subheadline.weight(.bold))
-                                    .foregroundStyle(isSelected ? .white : palette.textSecondary)
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 10)
-                                    .background(
-                                        isSelected ? DetailStyle.netflixRed.opacity(0.92) : palette.surfaceRaised,
-                                        in: RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
-                                    )
-                                    .overlay {
-                                        RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
-                                            .stroke(isSelected ? DetailStyle.netflixRed : palette.hairline, lineWidth: 1)
+            switch model.selectedSourceState {
+            case .idle:
+                contentInlineHint("请选择一个播放源")
+            case .loading:
+                HStack(spacing: 10) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("正在拉取剧集…")
+                        .font(.subheadline)
+                        .foregroundStyle(palette.textTertiary)
+                }
+            case .failed(let message):
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("剧集加载失败", systemImage: "exclamationmark.triangle.fill")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.orange)
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(palette.textTertiary)
+                }
+            case .loaded(let detail):
+                let episodes = model.currentEpisodes
+                let pageSize = 100
+                let totalPages = max(1, (episodes.count + pageSize - 1) / pageSize)
+                let safePage = min(episodePage, totalPages - 1)
+                let pageStart = safePage * pageSize
+                let pageEnd = min(pageStart + pageSize, episodes.count)
+                let resumeIndex = resumeEpisodeIndex
+
+                VStack(alignment: .leading, spacing: 14) {
+                    if detail.roads.count > 1 {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(detail.roads.indices, id: \.self) { index in
+                                    let isSelected = model.selectedRoadIndex == index
+                                    Button {
+                                        model.selectRoad(index)
+                                        episodePage = 0
+                                    } label: {
+                                        Text(detail.roads[index].label)
+                                            .font(.caption.weight(isSelected ? .semibold : .medium))
+                                            .foregroundStyle(isSelected ? palette.textPrimary : palette.textTertiary)
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 7)
+                                            .background {
+                                                Capsule(style: .continuous)
+                                                    .fill(isSelected ? palette.surfaceRaised : Color.clear)
+                                            }
+                                            .overlay {
+                                                Capsule(style: .continuous)
+                                                    .strokeBorder(palette.hairline.opacity(isSelected ? 1 : 0.5), lineWidth: 1)
+                                            }
+                                            .contentShape(Capsule(style: .continuous))
                                     }
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-
-                if totalPages > 1 {
-                    FlowLayout(horizontalSpacing: 6, verticalSpacing: 6) {
-                        ForEach(0..<totalPages, id: \.self) { page in
-                            let start = page * pageSize + 1
-                            let end = min((page + 1) * pageSize, episodes.count)
-                            let isSelected = safePage == page
-                            Button {
-                                episodePage = page
-                            } label: {
-                                Text("\(start)-\(end)")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(isSelected ? .white : palette.textSecondary)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                    .background(
-                                        isSelected ? DetailStyle.netflixRed.opacity(0.72) : palette.surfaceRaised,
-                                        in: Capsule(style: .continuous)
-                                    )
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 96, maximum: 150), spacing: 10)],
-                    spacing: 12
-                ) {
-                    ForEach(Array(episodes[pageStart..<pageEnd].enumerated()), id: \.element.id) { pageIndex, episode in
-                        let absoluteIndex = pageStart + pageIndex
-                        Button {
-                            if let request = model.playbackRequest(episodeIndex: absoluteIndex) {
-                                onTapPlay(request, model.sourceCache)
-                            }
-                        } label: {
-                            Text(episode.title)
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(palette.textPrimary)
-                                .multilineTextAlignment(.center)
-                                .lineLimit(2)
-                                .frame(maxWidth: .infinity, minHeight: 56)
-                                .padding(.horizontal, 10)
-                                .background(
-                                    palette.surfaceRaised,
-                                    in: RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
-                                )
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
-                                        .stroke(palette.hairline, lineWidth: 1)
+                                    .buttonStyle(.plain)
                                 }
+                            }
                         }
-                        .buttonStyle(.plain)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    if totalPages > 1 {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(0..<totalPages, id: \.self) { page in
+                                    let start = page * pageSize + 1
+                                    let end = min((page + 1) * pageSize, episodes.count)
+                                    let isSelected = safePage == page
+                                    Button {
+                                        episodePage = page
+                                    } label: {
+                                        Text("\(start)–\(end)")
+                                            .font(.caption2.weight(.semibold))
+                                            .foregroundStyle(isSelected ? palette.textPrimary : palette.textTertiary)
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 6)
+                                            .background {
+                                                Capsule(style: .continuous)
+                                                    .fill(isSelected ? palette.surfaceRaised : Color.clear)
+                                            }
+                                            .contentShape(Capsule(style: .continuous))
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    if episodes.isEmpty {
+                        contentInlineHint("该线路暂无剧集")
+                    } else {
+                        LazyVGrid(
+                            columns: [GridItem(.adaptive(minimum: DetailContentStyle.episodeMin, maximum: 128), spacing: 10)],
+                            spacing: 10
+                        ) {
+                            ForEach(Array(episodes[pageStart..<pageEnd].enumerated()), id: \.element.id) { pageIndex, episode in
+                                let absoluteIndex = pageStart + pageIndex
+                                let isResume = resumeIndex == absoluteIndex
+                                Button {
+                                    if let request = model.playbackRequest(episodeIndex: absoluteIndex) {
+                                        onTapPlay(request, model.sourceCache)
+                                    }
+                                } label: {
+                                    episodeCell(episode: episode, index: absoluteIndex, isResume: isResume)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
                     }
                 }
+                .onChange(of: model.selectedRoadIndex) { _, _ in episodePage = 0 }
+                .onChange(of: model.selectedSourceID) { _, _ in episodePage = 0 }
             }
-            .onChange(of: model.selectedRoadIndex) { _, _ in episodePage = 0 }
-            .onChange(of: model.selectedSourceID) { _, _ in episodePage = 0 }
         }
     }
 
     @ViewBuilder
+    private func episodeCell(episode: Episode, index: Int, isResume: Bool) -> some View {
+        VStack(spacing: 6) {
+            Text(episodeNumberLabel(for: episode, fallbackIndex: index))
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(isResume ? DetailStyle.netflixRed : palette.textTertiary)
+                .tracking(0.4)
+            Text(episode.title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(palette.textPrimary)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, minHeight: 72)
+        .background {
+            RoundedRectangle(cornerRadius: DetailContentStyle.chipRadius, style: .continuous)
+                .fill(isResume ? DetailStyle.netflixRed.opacity(0.12) : palette.surfaceRaised.opacity(0.85))
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: DetailContentStyle.chipRadius, style: .continuous)
+                .strokeBorder(
+                    isResume ? DetailStyle.netflixRed.opacity(0.55) : palette.hairline.opacity(0.8),
+                    lineWidth: 1
+                )
+        }
+    }
+
+    private func episodeNumberLabel(for episode: Episode, fallbackIndex: Int) -> String {
+        let number = episode.index >= 0 ? episode.index + 1 : fallbackIndex + 1
+        return String(format: "EP %02d", number)
+    }
+
+    private var resumeEpisodeIndex: Int? {
+        guard let hint = model.historyHint,
+            model.selectedSource?.ruleName == hint.ruleName,
+            model.currentEpisodes.indices.contains(hint.episodeIndex),
+            model.currentEpisodes[hint.episodeIndex].title == hint.episodeTitle
+        else {
+            return nil
+        }
+        return hint.episodeIndex
+    }
+
+    @ViewBuilder
+    private var tagCloud: some View {
+        WrapLayout(spacing: 8, lineSpacing: 8) {
+            ForEach(model.tags, id: \.name) { tag in
+                Button {
+                    onTapTag(tag.name)
+                } label: {
+                    HStack(spacing: 5) {
+                        Text(tag.name)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(palette.textSecondary)
+                        if tag.count > 0 {
+                            Text("\(tag.count)")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(palette.textTertiary)
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background {
+                        Capsule(style: .continuous)
+                            .fill(palette.surfaceRaised.opacity(0.9))
+                    }
+                    .overlay {
+                        Capsule(style: .continuous)
+                            .strokeBorder(palette.hairline.opacity(0.7), lineWidth: 1)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    // MARK: Social tabs
+
+    @ViewBuilder
     private var commentsContent: some View {
         if model.comments.isEmpty {
-            centeredPanel {
-                Text("暂无吐槽")
-                    .foregroundStyle(palette.textSecondary)
-            }
+            contentStatus(
+                systemImage: "text.bubble",
+                title: "暂无吐槽",
+                message: "这部作品还没有短评。"
+            )
         } else {
-            VStack(spacing: 14) {
+            LazyVStack(spacing: 12) {
                 ForEach(model.comments) { comment in
-                    centeredPanel {
-                        HStack(alignment: .top, spacing: 12) {
-                            avatar(url: comment.avatarURL, title: comment.authorName)
-                                .frame(width: 42, height: 42)
+                    glassCard {
+                        HStack(alignment: .top, spacing: 14) {
+                            circularAvatar(url: comment.avatarURL, title: comment.authorName, size: 40)
                             VStack(alignment: .leading, spacing: 8) {
-                                HStack {
+                                HStack(alignment: .firstTextBaseline) {
                                     Text(comment.authorName)
                                         .font(.subheadline.weight(.semibold))
-                                    Spacer()
+                                        .foregroundStyle(palette.textPrimary)
+                                    Spacer(minLength: 8)
                                     Text(comment.publishedAt)
-                                        .font(.caption)
+                                        .font(.caption2)
                                         .foregroundStyle(palette.textTertiary)
                                 }
-                                HStack(spacing: 8) {
-                                    if !comment.stateLabel.isEmpty {
-                                        Text(comment.stateLabel)
+                                if !comment.stateLabel.isEmpty || !comment.ratingLabel.isEmpty {
+                                    HStack(spacing: 8) {
+                                        if !comment.stateLabel.isEmpty {
+                                            Text(comment.stateLabel)
+                                                .padding(.horizontal, 8)
+                                                .padding(.vertical, 3)
+                                                .background(palette.surfaceRaised, in: Capsule(style: .continuous))
+                                        }
+                                        if !comment.ratingLabel.isEmpty {
+                                            Text(comment.ratingLabel.replacingOccurrences(of: "stars", with: "★"))
+                                        }
                                     }
-                                    if !comment.ratingLabel.isEmpty {
-                                        Text(comment.ratingLabel.replacingOccurrences(of: "stars", with: "★"))
-                                    }
+                                    .font(.caption2.weight(.medium))
+                                    .foregroundStyle(palette.textTertiary)
                                 }
-                                .font(.caption)
-                                .foregroundStyle(palette.textTertiary)
                                 Text(comment.body)
                                     .font(.body)
+                                    .foregroundStyle(palette.textSecondary)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                         }
                     }
-                    .frame(maxWidth: .infinity)
                 }
             }
         }
@@ -1473,80 +1616,111 @@ public struct DetailView: View {
     @ViewBuilder
     private var charactersContent: some View {
         if model.characters.isEmpty {
-            centeredPanel {
-                Text("暂无角色数据")
-                    .foregroundStyle(palette.textSecondary)
-            }
+            contentStatus(
+                systemImage: "person.3",
+                title: "暂无角色",
+                message: "还没有角色资料。"
+            )
         } else {
-            VStack(spacing: 16) {
-                ForEach(model.characters) { character in
-                    centeredPanel {
-                        HStack(alignment: .top, spacing: 14) {
-                            avatar(url: URL(string: character.images.best), title: character.name)
-                                .frame(width: 64, height: 86)
-                                .clipShape(RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous))
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text(character.name)
-                                    .font(.headline)
-                                Text(character.relation)
-                                    .font(.caption)
-                                    .foregroundStyle(palette.textTertiary)
-                                if !character.summary.isEmpty {
-                                    Text(character.summary)
-                                        .font(.caption)
-                                        .foregroundStyle(palette.textSecondary)
-                                        .lineLimit(4)
-                                }
-                                if let actor = character.actors.first {
-                                    Text("CV · \(actor.name)")
-                                        .font(.caption.weight(.medium))
-                                }
-                            }
+            VStack(alignment: .leading, spacing: 16) {
+                Text("\(model.characters.count) 位角色")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(palette.textTertiary)
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .top, spacing: 14) {
+                        ForEach(model.characters) { character in
+                            characterCard(character)
                         }
                     }
-                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
+                }
+                .scrollClipDisabled()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func characterCard(_ character: BangumiRelatedCharacter) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            avatar(url: URL(string: character.images.best), title: character.name)
+                .frame(width: 118, height: 158)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(palette.hairline, lineWidth: 1)
+                }
+                .shadow(color: .black.opacity(0.18), radius: 12, y: 6)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(character.name)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(2)
+                if !character.relation.isEmpty {
+                    Text(character.relation)
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(palette.textTertiary)
+                        .lineLimit(1)
+                }
+                if let actor = character.actors.first {
+                    Text("CV \(actor.name)")
+                        .font(.caption2)
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1)
                 }
             }
+            .frame(width: 118, alignment: .leading)
         }
     }
 
     @ViewBuilder
     private var reviewsContent: some View {
         if model.reviews.isEmpty {
-            centeredPanel {
-                Text("暂无评论")
-                    .foregroundStyle(palette.textSecondary)
-            }
+            contentStatus(
+                systemImage: "doc.text",
+                title: "暂无评论",
+                message: "还没有长评。"
+            )
         } else {
-            VStack(spacing: 14) {
+            LazyVStack(spacing: 12) {
                 ForEach(model.reviews) { review in
-                    centeredPanel {
-                        HStack(alignment: .top, spacing: 12) {
-                            avatar(url: review.avatarURL, title: review.authorName)
-                                .frame(width: 46, height: 46)
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text(review.title)
-                                    .font(.headline)
-                                HStack(spacing: 8) {
+                    glassCard {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack(alignment: .top, spacing: 12) {
+                                circularAvatar(url: review.avatarURL, title: review.authorName, size: 36)
+                                VStack(alignment: .leading, spacing: 3) {
                                     Text(review.authorName)
-                                    if !review.publishedAt.isEmpty {
-                                        Text(review.publishedAt)
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(palette.textPrimary)
+                                    HStack(spacing: 8) {
+                                        if !review.publishedAt.isEmpty {
+                                            Text(review.publishedAt)
+                                        }
+                                        if !review.replyCount.isEmpty {
+                                            Text(review.replyCount)
+                                        }
                                     }
-                                    if !review.replyCount.isEmpty {
-                                        Text(review.replyCount)
-                                    }
+                                    .font(.caption2)
+                                    .foregroundStyle(palette.textTertiary)
                                 }
-                                .font(.caption)
-                                .foregroundStyle(palette.textTertiary)
-                                if !review.summary.isEmpty {
-                                    Text(review.summary)
-                                        .font(.body)
-                                        .lineLimit(5)
-                                }
+                                Spacer(minLength: 0)
+                            }
+
+                            Text(review.title)
+                                .font(.headline.weight(.semibold))
+                                .foregroundStyle(palette.textPrimary)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            if !review.summary.isEmpty {
+                                Text(review.summary)
+                                    .font(.body)
+                                    .foregroundStyle(palette.textSecondary)
+                                    .lineLimit(5)
+                                    .lineSpacing(3)
                             }
                         }
                     }
-                    .frame(maxWidth: .infinity)
                 }
             }
         }
@@ -1555,58 +1729,134 @@ public struct DetailView: View {
     @ViewBuilder
     private var staffContent: some View {
         if model.staff.isEmpty {
-            centeredPanel {
-                Text("暂无制作人员数据")
-                    .foregroundStyle(palette.textSecondary)
-            }
+            contentStatus(
+                systemImage: "person.crop.rectangle.stack",
+                title: "暂无制作人员",
+                message: "还没有 staff 资料。"
+            )
         } else {
-            VStack(spacing: 14) {
+            LazyVStack(spacing: 10) {
                 ForEach(model.staff) { person in
-                    centeredPanel {
-                        HStack(alignment: .top, spacing: 12) {
-                            squareAvatar(url: URL(string: person.images.best), title: person.name, size: 48)
-                            VStack(alignment: .leading, spacing: 6) {
-                                HStack {
-                                    Text(person.name)
-                                        .font(.subheadline.weight(.semibold))
-                                    Spacer()
-                                    Text(person.relation)
-                                        .font(.caption)
-                                        .foregroundStyle(palette.textTertiary)
-                                }
+                    glassCard(padding: 14) {
+                        HStack(spacing: 14) {
+                            squareAvatar(url: URL(string: person.images.best), title: person.name, size: 52)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(person.name)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(palette.textPrimary)
+                                    .lineLimit(1)
                                 if !person.career.isEmpty {
                                     Text(person.career.joined(separator: " · "))
                                         .font(.caption)
                                         .foregroundStyle(palette.textTertiary)
+                                        .lineLimit(1)
                                 }
                                 if !person.eps.isEmpty {
                                     Text(person.eps)
-                                        .font(.caption)
+                                        .font(.caption2)
                                         .foregroundStyle(palette.textTertiary)
                                 }
                             }
+                            Spacer(minLength: 8)
+                            if !person.relation.isEmpty {
+                                Text(person.relation)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(palette.textSecondary)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(palette.surfaceRaised, in: Capsule(style: .continuous))
+                            }
                         }
                     }
-                    .frame(maxWidth: .infinity)
                 }
             }
         }
     }
 
+    // MARK: Content chrome
+
     @ViewBuilder
-    private func centeredPanel<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+    private func contentModule<Content: View>(
+        eyebrow: String,
+        title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(eyebrow)
+                    .font(.caption.weight(.semibold))
+                    .tracking(1.2)
+                    .foregroundStyle(palette.textTertiary)
+                Text(title)
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(palette.textPrimary)
+            }
+            glassCard(content: content)
+        }
+    }
+
+    @ViewBuilder
+    private func glassCard<Content: View>(
+        padding: CGFloat = 18,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
         content()
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(18)
-            .background(
-                palette.surface.opacity(0.90),
-                in: RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
-            )
+            .padding(padding)
+            .background {
+                RoundedRectangle(cornerRadius: DetailContentStyle.moduleRadius, style: .continuous)
+                    .fill(palette.surface.opacity(colorScheme == .dark ? 0.72 : 0.88))
+            }
             .overlay {
-                RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
-                    .stroke(palette.hairline, lineWidth: 1)
+                RoundedRectangle(cornerRadius: DetailContentStyle.moduleRadius, style: .continuous)
+                    .strokeBorder(palette.hairline, lineWidth: 1)
+            }
+    }
+
+    @ViewBuilder
+    private func contentStatus<Accessory: View>(
+        systemImage: String,
+        title: String,
+        message: String,
+        @ViewBuilder accessory: () -> Accessory = { EmptyView() }
+    ) -> some View {
+        glassCard {
+            VStack(spacing: 12) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 28, weight: .light))
+                    .foregroundStyle(palette.textTertiary)
+                    .symbolRenderingMode(.hierarchical)
+                Text(title)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(palette.textPrimary)
+                Text(message)
+                    .font(.subheadline)
+                    .foregroundStyle(palette.textTertiary)
+                    .multilineTextAlignment(.center)
+                accessory()
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 20)
         }
-        .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private func contentInlineHint(_ text: String) -> some View {
+        Text(text)
+            .font(.subheadline)
+            .foregroundStyle(palette.textTertiary)
+            .padding(.vertical, 8)
+    }
+
+    @ViewBuilder
+    private func circularAvatar(url: URL?, title: String, size: CGFloat) -> some View {
+        avatar(url: url, title: title)
+            .frame(width: size, height: size)
+            .clipShape(Circle())
+            .overlay {
+                Circle()
+                    .strokeBorder(palette.hairline, lineWidth: 1)
+            }
     }
 
     @ViewBuilder
@@ -1614,7 +1864,11 @@ public struct DetailView: View {
         avatar(url: url, title: title)
             .frame(width: size, height: size)
             .clipped()
-            .clipShape(RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(palette.hairline, lineWidth: 1)
+            }
     }
 
     @ViewBuilder
@@ -1626,23 +1880,27 @@ public struct DetailView: View {
                     .resizable()
                     .aspectRatio(contentMode: .fill)
             default:
-                RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
-                    .fill(palette.surfaceRaised)
-                    .overlay {
-                        Text(String(title.prefix(1)))
-                            .font(.headline.weight(.bold))
-                            .foregroundStyle(palette.textSecondary)
-                    }
+                ZStack {
+                    palette.surfaceRaised
+                    Text(String(title.prefix(1)))
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(palette.textSecondary)
+                }
             }
         }
         .clipped()
-        .clipShape(RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous))
     }
 
     private func formatMillis(_ ms: Int) -> String {
         let seconds = ms / 1000
         return String(format: "%02d:%02d", seconds / 60, seconds % 60)
     }
+}
+
+private enum DetailContentStyle {
+    static let moduleRadius: CGFloat = 22
+    static let chipRadius: CGFloat = 14
+    static let episodeMin: CGFloat = 88
 }
 
 private struct ExpandableSummary: View {
@@ -1655,11 +1913,11 @@ private struct ExpandableSummary: View {
     @State private var isTruncated = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             Text(text)
                 .font(.body)
                 .foregroundStyle(textColor)
-                .lineSpacing(5)
+                .lineSpacing(6)
                 .lineLimit(isExpanded ? nil : collapsedLineLimit)
                 .fixedSize(horizontal: false, vertical: true)
                 .background(measurementOverlay)
@@ -1670,8 +1928,9 @@ private struct ExpandableSummary: View {
                     withAnimation(.easeInOut(duration: 0.2)) { isExpanded.toggle() }
                 } label: {
                     HStack(spacing: 4) {
-                        Text(isExpanded ? "收起" : "展开更多")
+                        Text(isExpanded ? "收起" : "展开全部")
                         Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                            .font(.caption2.weight(.bold))
                     }
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(accentColor)
@@ -1686,13 +1945,13 @@ private struct ExpandableSummary: View {
         ZStack(alignment: .topLeading) {
             Text(text)
                 .font(.body)
-                .lineSpacing(5)
+                .lineSpacing(6)
                 .lineLimit(collapsedLineLimit)
                 .fixedSize(horizontal: false, vertical: true)
                 .background(GeometryReader { collapsed in
                     Text(text)
                         .font(.body)
-                        .lineSpacing(5)
+                        .lineSpacing(6)
                         .fixedSize(horizontal: false, vertical: true)
                         .background(GeometryReader { full in
                             Color.clear.onAppear {
