@@ -16,4 +16,11 @@ struct PlayerTemporaryBoostRateTests {
         #expect(PlayerTemporaryBoostRate.resolve(horizontalTranslation: 240) == 3.0)
         #expect(PlayerTemporaryBoostRate.resolve(horizontalTranslation: -240) == 1.0)
     }
+
+    @Test("temporary boost cannot begin while buffering")
+    func cannotBeginWhileBuffering() {
+        #expect(!PlayerTemporaryBoostRate.canBegin(isPlaying: true, isBuffering: true))
+        #expect(!PlayerTemporaryBoostRate.canBegin(isPlaying: false, isBuffering: false))
+        #expect(PlayerTemporaryBoostRate.canBegin(isPlaying: true, isBuffering: false))
+    }
 }

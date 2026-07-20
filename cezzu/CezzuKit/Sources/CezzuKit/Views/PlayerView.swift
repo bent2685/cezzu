@@ -265,7 +265,11 @@ public struct PlayerView: View {
             }
         }
         .onChange(of: coordinator.backend.isBuffering) { _, isBuffering in
-            guard !isBuffering, coordinator.phase == .playing else { return }
+            if isBuffering {
+                endTemporaryBoost()
+                return
+            }
+            guard coordinator.phase == .playing else { return }
             revealControlsTemporarily()
         }
         .onChange(of: coordinator.backend.currentTime) { _, newTime in
@@ -780,7 +784,12 @@ public struct PlayerView: View {
     }
 
     private func beginTemporaryBoost() {
-        guard temporaryBoostBaseRate == nil, coordinator.phase == .playing else { return }
+        guard temporaryBoostBaseRate == nil,
+              PlayerTemporaryBoostRate.canBegin(
+                  isPlaying: coordinator.phase == .playing,
+                  isBuffering: isLoadingVisible
+              )
+        else { return }
         temporaryBoostBaseRate = max(coordinator.backend.rate, 1.0)
         let rate = PlayerTemporaryBoostRate.defaultRate
         temporaryBoostRate = rate

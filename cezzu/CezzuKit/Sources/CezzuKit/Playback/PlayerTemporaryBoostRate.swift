@@ -7,6 +7,10 @@ public enum PlayerTemporaryBoostRate {
     public static let maximumRate: Float = 3.0
     private static let pointsPerStep: CGFloat = 18
 
+    static func canBegin(isPlaying: Bool, isBuffering: Bool) -> Bool {
+        isPlaying && !isBuffering
+    }
+
     public static func resolve(horizontalTranslation: CGFloat) -> Float {
         let rawSteps = horizontalTranslation / pointsPerStep
         let steps =

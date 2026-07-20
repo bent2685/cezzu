@@ -19,7 +19,11 @@ struct PlayerOverlayVisibility {
     }
 
     var showsBottomControls: Bool {
-        !isTemporaryBoosting && !isLoadingVisible && (controlsVisible || phase != .playing)
+        guard !isTemporaryBoosting else { return false }
+        if phase == .playing {
+            return controlsVisible
+        }
+        return !isLoadingVisible
     }
 
     var showsTemporaryBoostBadge: Bool {
