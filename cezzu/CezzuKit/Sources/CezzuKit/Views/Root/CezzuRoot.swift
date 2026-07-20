@@ -166,10 +166,16 @@ struct CezzuRootContent: View {
 
 // MARK: - iPhone TabView
 
+/// iPhone 底部 dock 的 tab 标识。搜索是独立的 role:.search 按钮。
+private enum CompactTab: Hashable {
+    case home, follow, history, settings, search
+}
+
 struct CompactRootView: View {
     let session: CezzuSession
     @Environment(\.playerPresentationController) private var presentation
     @State private var path = NavigationPath()
+    @State private var selectedTab: CompactTab = .home
     @State private var searchModel: SearchViewModel
     @State private var homeModel: HomeViewModel
     @State private var activePlayerRequest: PlaybackRequest?
@@ -191,53 +197,12 @@ struct CompactRootView: View {
 
     var body: some View {
         ZStack {
-            TabView {
-                NavigationStack(path: $path) {
-                    HomeView(
-                        model: homeModel,
-                        onTapItem: { item in
-                            path.append(Route.detail(item))
-                        },
-                        onTapSearch: {
-                            path.append(Route.search)
-                        }
-                    )
-                    .navigationDestination(for: Route.self) { route in
-                        routeView(route)
-                    }
-                }
-                .tabItem { Label("主页", systemImage: "house") }
-
-                NavigationStack(path: $path) {
-                    FollowView(followStore: session.followStore) { item in
-                        path.append(Route.detail(item))
-                    }
-                    .navigationDestination(for: Route.self) { route in
-                        routeView(route)
-                    }
-                }
-                .tabItem { Label("追番", systemImage: "star") }
-
-                NavigationStack(path: $path) {
-                    HistoryView(history: session.history) { entry in
-                        path.append(Route.historyDetail(historyHint(from: entry)))
-                    }
-                    .navigationDestination(for: Route.self) { route in
-                        routeView(route)
-                    }
-                }
-                .tabItem { Label("最近观看", systemImage: "clock") }
-
-                NavigationStack {
-                    SettingsView()
-                }
-                .tabItem { Label("设置", systemImage: "gearshape") }
-            }
-            .scaleEffect(playerTransitionVisible ? 0.985 : 1)
-            .opacity(playerTransitionVisible ? 0.92 : 1)
-            .blur(radius: playerTransitionVisible ? 4 : 0)
-            .disabled(activePlayerRequest != nil)
-            .animation(.easeInOut(duration: 0.22), value: playerTransitionVisible)
+            compactTabView
+                .scaleEffect(playerTransitionVisible ? 0.985 : 1)
+                .opacity(playerTransitionVisible ? 0.92 : 1)
+                .blur(radius: playerTransitionVisible ? 4 : 0)
+                .disabled(activePlayerRequest != nil)
+                .animation(.easeInOut(duration: 0.22), value: playerTransitionVisible)
 
             if let activePlayerRequest {
                 ZStack {
@@ -268,6 +233,152 @@ struct CompactRootView: View {
         }
     }
 
+    /// iOS 18+：搜索以 `role: .search` 独立钉在 dock 右侧；更老系统退化为普通第 5 个 tab。
+    /// active 用实心 SF Symbol，非 active 用描边。
+    @ViewBuilder
+    private var compactTabView: some View {
+        if #available(iOS 18.0, macOS 15.0, *) {
+            TabView(selection: $selectedTab) {
+                Tab(value: .home) {
+                    homeStack
+                } label: {
+                    dockLabel("主页", outline: "house", fill: "house.fill", tab: .home)
+                }
+
+                Tab(value: .follow) {
+                    followStack
+                } label: {
+                    dockLabel("追番", outline: "star", fill: "star.fill", tab: .follow)
+                }
+
+                Tab(value: .history) {
+                    historyStack
+                } label: {
+                    dockLabel("最近观看", outline: "clock", fill: "clock.fill", tab: .history)
+                }
+
+                Tab(value: .settings) {
+                    settingsStack
+                } label: {
+                    dockLabel("设置", outline: "gearshape", fill: "gearshape.fill", tab: .settings)
+                }
+
+                Tab(value: .search, role: .search) {
+                    searchStack
+                } label: {
+                    dockLabel("搜索", outline: "magnifyingglass", fill: "magnifyingglass", tab: .search)
+                }
+            }
+        } else {
+            TabView(selection: $selectedTab) {
+                homeStack
+                    .tabItem {
+                        dockLabel("主页", outline: "house", fill: "house.fill", tab: .home)
+                    }
+                    .tag(CompactTab.home)
+
+                followStack
+                    .tabItem {
+                        dockLabel("追番", outline: "star", fill: "star.fill", tab: .follow)
+                    }
+                    .tag(CompactTab.follow)
+
+                historyStack
+                    .tabItem {
+                        dockLabel("最近观看", outline: "clock", fill: "clock.fill", tab: .history)
+                    }
+                    .tag(CompactTab.history)
+
+                settingsStack
+                    .tabItem {
+                        dockLabel("设置", outline: "gearshape", fill: "gearshape.fill", tab: .settings)
+                    }
+                    .tag(CompactTab.settings)
+
+                searchStack
+                    .tabItem {
+                        dockLabel("搜索", outline: "magnifyingglass", fill: "magnifyingglass", tab: .search)
+                    }
+                    .tag(CompactTab.search)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func dockLabel(
+        _ title: String,
+        outline: String,
+        fill: String,
+        tab: CompactTab
+    ) -> some View {
+        // active 用实心 SF Symbol，非 active 用描边；同时关掉 Tab 系统默认的 fill 变体注入。
+        let isActive = selectedTab == tab
+        Label {
+            Text(title)
+        } icon: {
+            Image(systemName: isActive ? fill : outline)
+                .environment(\.symbolVariants, isActive ? .fill : SymbolVariants.none)
+        }
+    }
+
+    private var homeStack: some View {
+        NavigationStack(path: $path) {
+            HomeView(
+                model: homeModel,
+                onTapItem: { item in
+                    path.append(Route.detail(item))
+                },
+                onTapSearch: openSearch
+            )
+            .navigationDestination(for: Route.self) { route in
+                routeView(route)
+            }
+        }
+    }
+
+    private var followStack: some View {
+        NavigationStack(path: $path) {
+            FollowView(followStore: session.followStore) { item in
+                path.append(Route.detail(item))
+            }
+            .navigationDestination(for: Route.self) { route in
+                routeView(route)
+            }
+        }
+    }
+
+    private var historyStack: some View {
+        NavigationStack(path: $path) {
+            HistoryView(history: session.history) { entry in
+                path.append(Route.historyDetail(historyHint(from: entry)))
+            }
+            .navigationDestination(for: Route.self) { route in
+                routeView(route)
+            }
+        }
+    }
+
+    private var settingsStack: some View {
+        NavigationStack {
+            SettingsView()
+        }
+    }
+
+    private var searchStack: some View {
+        NavigationStack(path: $path) {
+            SearchView(model: searchModel) { item in
+                path.append(Route.detail(item))
+            }
+            .navigationDestination(for: Route.self) { route in
+                routeView(route)
+            }
+        }
+    }
+
+    private func openSearch() {
+        selectedTab = .search
+    }
+
     @ViewBuilder
     private func routeView(_ route: Route) -> some View {
         switch route {
@@ -275,7 +386,7 @@ struct CompactRootView: View {
             HomeView(
                 model: homeModel,
                 onTapItem: { item in path.append(Route.detail(item)) },
-                onTapSearch: { path.append(Route.search) }
+                onTapSearch: openSearch
             )
         case .search:
             SearchView(model: searchModel) { item in
@@ -446,6 +557,34 @@ struct SplitRootView: View {
     }
 
     private var sidebar: some View {
+        // macOS：不用 List selection（它的高亮走 App Accent，深色 monochrome 白会叠成白底白字）。
+        // 自绘蓝色选中条，深浅色统一蓝色 + 白字。iPad / iOS 仍用系统 selection。
+        #if os(macOS)
+        List {
+            ForEach(
+                [SidebarItem.home, .follow, .history, .settings]
+            ) { item in
+                let isSelected = sidebarItem == item
+                Button {
+                    sidebarItem = item
+                } label: {
+                    Label(item.label, systemImage: item.systemImage)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(isSelected ? Color.white : Color.primary)
+                .listRowBackground(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        // 写死系统蓝，不走 monochrome AccentColor（深色为白会叠字）。
+                        .fill(isSelected ? Color.blue : Color.clear)
+                        .padding(.vertical, 1)
+                )
+            }
+        }
+        .listStyle(.sidebar)
+        .navigationTitle("Cezzu")
+        #else
         List(selection: $sidebarItem) {
             ForEach(
                 [SidebarItem.home, .follow, .history, .settings]
@@ -455,6 +594,7 @@ struct SplitRootView: View {
             }
         }
         .navigationTitle("Cezzu")
+        #endif
     }
 
     private var detailChromeFillColor: Color {

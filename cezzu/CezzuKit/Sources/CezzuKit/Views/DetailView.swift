@@ -646,7 +646,6 @@ enum DetailBackdropColorSampler {
 }
 
 private enum DetailStyle {
-    static let netflixRed = Color(red: 231.0 / 255.0, green: 23.0 / 255.0, blue: 33.0 / 255.0)
     static let cornerRadius: CGFloat = 8
 
     static func palette(for colorScheme: ColorScheme) -> DetailPalette {
@@ -694,7 +693,10 @@ private struct DetailPalette {
 public struct DetailView: View {
     @State private var model: DetailViewModel
     @State private var episodePage: Int = 0
+    /// 长按角色立绘时临时放大；松手在 `onLongPressGesture(pressing:)` 里清空。
+    @State private var heldCharacter: BangumiRelatedCharacter? = nil
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(RuleStoreCoordinator.self) private var ruleStore
     @Environment(FollowStore.self) private var followStore
     var onTapPlay: (PlaybackRequest, SourceSearchCache?) -> Void
@@ -735,9 +737,19 @@ public struct DetailView: View {
                 .scrollContentBackground(.hidden)
                 .contentMargins(.horizontal, 0, for: .scrollContent)
                 .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
+
+                if let heldCharacter {
+                    characterImageMagnifier(heldCharacter, viewportSize: proxy.size)
+                        .transition(
+                            .opacity.combined(with: .scale(scale: 0.94, anchor: .center))
+                        )
+                        .zIndex(20)
+                }
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
             .clipped()
+            .animation(.spring(response: 0.28, dampingFraction: 0.86), value: heldCharacter?.id)
+            .sensoryFeedback(.impact(flexibility: .soft, intensity: 0.7), trigger: heldCharacter?.id)
         }
         .ignoresSafeArea(edges: .top)
         .task {
@@ -998,11 +1010,11 @@ public struct DetailView: View {
                         Text(primaryActionTitle)
                             .fontWeight(.bold)
                     }
-                    .foregroundStyle(.white)
+                    .foregroundStyle(CezzuMonochrome.onFill(for: colorScheme))
                     .frame(minWidth: 160, minHeight: 48)
                     .padding(.horizontal, 18)
                     .background(
-                        DetailStyle.netflixRed,
+                        CezzuMonochrome.fill(for: colorScheme),
                         in: RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
                     )
                 }
@@ -1518,7 +1530,7 @@ public struct DetailView: View {
         VStack(spacing: 6) {
             Text(episodeNumberLabel(for: episode, fallbackIndex: index))
                 .font(.caption2.weight(.bold))
-                .foregroundStyle(isResume ? DetailStyle.netflixRed : palette.textTertiary)
+                .foregroundStyle(isResume ? CezzuMonochrome.fill(for: colorScheme) : palette.textTertiary)
                 .tracking(0.4)
             Text(episode.title)
                 .font(.caption.weight(.semibold))
@@ -1532,12 +1544,18 @@ public struct DetailView: View {
         .frame(maxWidth: .infinity, minHeight: 72)
         .background {
             RoundedRectangle(cornerRadius: DetailContentStyle.chipRadius, style: .continuous)
-                .fill(isResume ? DetailStyle.netflixRed.opacity(0.12) : palette.surfaceRaised.opacity(0.85))
+                .fill(
+                    isResume
+                        ? CezzuMonochrome.fill(for: colorScheme).opacity(0.12)
+                        : palette.surfaceRaised.opacity(0.85)
+                )
         }
         .overlay {
             RoundedRectangle(cornerRadius: DetailContentStyle.chipRadius, style: .continuous)
                 .strokeBorder(
-                    isResume ? DetailStyle.netflixRed.opacity(0.55) : palette.hairline.opacity(0.8),
+                    isResume
+                        ? CezzuMonochrome.fill(for: colorScheme).opacity(0.55)
+                        : palette.hairline.opacity(0.8),
                     lineWidth: 1
                 )
         }
@@ -1645,6 +1663,27 @@ public struct DetailView: View {
         }
     }
 
+    /// compact（iPhone）固定 3 列；regular（Mac / iPad）按最小宽度自适应列数。
+    private var characterGridColumns: [GridItem] {
+        let spacing = DetailContentStyle.characterSpacing
+        if horizontalSizeClass == .compact {
+            return Array(
+                repeating: GridItem(.flexible(), spacing: spacing, alignment: .top),
+                count: 3
+            )
+        }
+        return [
+            GridItem(
+                .adaptive(
+                    minimum: DetailContentStyle.characterMin,
+                    maximum: DetailContentStyle.characterMax
+                ),
+                spacing: spacing,
+                alignment: .top
+            ),
+        ]
+    }
+
     @ViewBuilder
     private var charactersContent: some View {
         if model.characters.isEmpty {
@@ -1659,30 +1698,54 @@ public struct DetailView: View {
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(palette.textTertiary)
 
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(alignment: .top, spacing: 14) {
-                        ForEach(model.characters) { character in
-                            characterCard(character)
-                        }
+                LazyVGrid(
+                    columns: characterGridColumns,
+                    alignment: .leading,
+                    spacing: DetailContentStyle.characterSpacing
+                ) {
+                    ForEach(model.characters) { character in
+                        characterCard(character)
                     }
-                    .padding(.vertical, 4)
                 }
-                .scrollClipDisabled()
             }
         }
     }
 
     @ViewBuilder
     private func characterCard(_ character: BangumiRelatedCharacter) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
         VStack(alignment: .leading, spacing: 10) {
-            avatar(url: URL(string: character.images.best), title: character.name)
-                .frame(width: 118, height: 158)
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            // 完整装入卡片：fit 居中不裁切；立绘多为白底，容器用纯白避免两侧色条。
+            Color.clear
+                .frame(maxWidth: .infinity)
+                .aspectRatio(DetailContentStyle.characterImageAspect, contentMode: .fit)
+                .background(Color.white)
                 .overlay {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(palette.hairline, lineWidth: 1)
+                    characterPortrait(
+                        url: URL(string: character.images.best),
+                        title: character.name,
+                        contentMode: .fit
+                    )
+                }
+                .clipShape(shape)
+                .overlay {
+                    shape.strokeBorder(palette.hairline, lineWidth: 1)
                 }
                 .shadow(color: .black.opacity(0.18), radius: 12, y: 6)
+                // 只挂在立绘上，避免整张卡（含文字区）抢走 ScrollView 滚动。
+                // 不用 DragGesture(minimumDistance: 0)：它会在 item 上吞掉纵向滑动。
+                .onLongPressGesture(
+                    minimumDuration: 0.4,
+                    maximumDistance: 10,
+                    pressing: { isPressing in
+                        if !isPressing {
+                            heldCharacter = nil
+                        }
+                    },
+                    perform: {
+                        heldCharacter = character
+                    }
+                )
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(character.name)
@@ -1702,8 +1765,85 @@ public struct DetailView: View {
                         .lineLimit(1)
                 }
             }
-            .frame(width: 118, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    /// 角色立绘。卡片用 `.fit` 保证人物完整；放大预览同样 fit，只是画布更大。
+    @ViewBuilder
+    private func characterPortrait(
+        url: URL?,
+        title: String,
+        contentMode: ContentMode
+    ) -> some View {
+        AsyncImage(url: url) { phase in
+            switch phase {
+            case .success(let image):
+                image
+                    .resizable()
+                    .aspectRatio(contentMode: contentMode)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            default:
+                ZStack {
+                    Color.white
+                    Text(String(title.prefix(1)))
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(Color.black.opacity(0.35))
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func characterImageMagnifier(
+        _ character: BangumiRelatedCharacter,
+        viewportSize: CGSize
+    ) -> some View {
+        let maxImageWidth = min(viewportSize.width - 48, 420)
+        let maxImageHeight = min(viewportSize.height * 0.72, 560)
+        ZStack {
+            Color.black.opacity(colorScheme == .dark ? 0.62 : 0.48)
+                .ignoresSafeArea()
+
+            VStack(spacing: 16) {
+                let shape = RoundedRectangle(cornerRadius: 22, style: .continuous)
+                // 与列表卡一致：先铺满纯白容器，再 fit 居中立绘，避免透明区透出暗色。
+                Color.white
+                    .frame(width: maxImageWidth, height: maxImageHeight)
+                    .overlay {
+                        characterPortrait(
+                            url: URL(string: character.images.best),
+                            title: character.name,
+                            contentMode: .fit
+                        )
+                    }
+                    .clipShape(shape)
+                    .overlay {
+                        shape.strokeBorder(palette.hairline, lineWidth: 1)
+                    }
+                    .shadow(color: .black.opacity(0.35), radius: 28, y: 14)
+
+                VStack(spacing: 4) {
+                    Text(character.name)
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.white)
+                    if !character.relation.isEmpty {
+                        Text(character.relation)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.white.opacity(0.78))
+                    }
+                    if let actor = character.actors.first {
+                        Text("CV \(actor.name)")
+                            .font(.footnote)
+                            .foregroundStyle(.white.opacity(0.72))
+                    }
+                }
+                .multilineTextAlignment(.center)
+            }
+            .padding(.horizontal, 24)
+        }
+        .allowsHitTesting(false)
     }
 
     @ViewBuilder
@@ -1933,6 +2073,12 @@ private enum DetailContentStyle {
     static let moduleRadius: CGFloat = 22
     static let chipRadius: CGFloat = 14
     static let episodeMin: CGFloat = 88
+    /// regular 宽度下角色宫格单卡最小 / 最大宽度（compact 固定 3 列，不走 adaptive）。
+    static let characterMin: CGFloat = 110
+    static let characterMax: CGFloat = 160
+    static let characterSpacing: CGFloat = 12
+    /// 角色立绘比例（竖图），宽度随列宽走，高度按比例自适应。
+    static let characterImageAspect: CGFloat = 3.0 / 4.0
 }
 
 private struct ExpandableSummary: View {

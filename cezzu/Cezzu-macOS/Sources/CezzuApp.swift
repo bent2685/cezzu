@@ -4,8 +4,6 @@ import SwiftUI
 
 @main
 struct CezzuApp: App {
-    private let themeColor = Color(red: 231.0 / 255.0, green: 23.0 / 255.0, blue: 33.0 / 255.0)
-
     /// macOS App 持有唯一 session，所有窗口（主窗口 + 独立播放器窗口）共享同一份 store / history。
     /// 启动时为 nil，加载完成后再注入，避免 CezzuRoot 长时间卡在 empty fallback 导致无规则/无播源。
     @State private var session: CezzuSession?
@@ -18,7 +16,8 @@ struct CezzuApp: App {
                     CezzuRoot(session: session)
                         .environment(\.playerPresentationController, makePresentationController())
                         .environment(\.playerInteractionController, makeInteractionController())
-                        .tint(themeColor)
+                        // 黑白 monochrome：浅色黑 / 深色白。
+                        .tint(Color.accentColor)
                 } else {
                     ProgressView("正在启动…")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -43,7 +42,7 @@ struct CezzuApp: App {
                 .environment(session.history)
                 .environment(\.playerPresentationController, makePresentationController())
                 .environment(\.playerInteractionController, makeInteractionController())
-                .tint(themeColor)
+                .tint(Color.accentColor)
             }
         }
         .defaultSize(width: 1280, height: 720)

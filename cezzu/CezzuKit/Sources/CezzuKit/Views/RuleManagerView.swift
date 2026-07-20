@@ -75,6 +75,7 @@ struct InstalledRulesView: View {
                                     )
                                 )
                                 .labelsHidden()
+                                .cezzuToggleTint()
                             }
                             Text("v\(installed.version)").font(.caption).foregroundStyle(.secondary)
                             HStack(spacing: 8) {
@@ -191,6 +192,7 @@ struct RuleSourcesView: View {
                                     )
                                 )
                                 .labelsHidden()
+                                .cezzuToggleTint()
                             }
                             Text(source.indexURL.absoluteString)
                                 .font(.caption)

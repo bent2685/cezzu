@@ -36,17 +36,22 @@ public struct DanmakuSettingsContent: View {
     public var body: some View {
         Section {
             Toggle("启用弹幕", isOn: $enableDanmaku)
+                .cezzuToggleTint()
         }
 
         Section("显示") {
             Toggle("滚动弹幕", isOn: $showScrollDanmaku)
                 .disabled(!enableDanmaku)
+                .cezzuToggleTint()
             Toggle("顶部弹幕", isOn: $showTopDanmaku)
                 .disabled(!enableDanmaku)
+                .cezzuToggleTint()
             Toggle("底部弹幕", isOn: $showBottomDanmaku)
                 .disabled(!enableDanmaku)
+                .cezzuToggleTint()
             Toggle("跟随视频倍速", isOn: $followPlaybackRateDanmaku)
                 .disabled(!enableDanmaku)
+                .cezzuToggleTint()
         }
 
         Section("样式") {
@@ -91,6 +96,7 @@ public struct DanmakuSettingsContent: View {
         if showsAdvancedOptions {
             Section {
                 Toggle("使用弹幕代理", isOn: $useProxy)
+                    .cezzuToggleTint()
                 if useProxy {
                     TextField("代理地址", text: $proxyURL, prompt: Text("https://your-proxy.example.com"))
                         .autocorrectionDisabled(true)

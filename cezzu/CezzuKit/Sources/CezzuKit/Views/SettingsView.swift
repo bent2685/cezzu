@@ -18,6 +18,7 @@ public struct SettingsView: View {
         Form {
             Section {
                 Toggle("启用本地代理", isOn: $enableLocalProxy)
+                    .cezzuToggleTint()
             } header: {
                 Text("播放")
             } footer: {

@@ -10,6 +10,7 @@ struct DanDanPlayCredentialsSettings: View {
     var body: some View {
         Section {
             Toggle("使用自定义凭证", isOn: $useCustom)
+                .cezzuToggleTint()
 
             if useCustom {
                 TextField("AppID", text: $appID)

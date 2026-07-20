@@ -4,6 +4,7 @@ import SwiftUI
 public struct SearchView: View {
     @Bindable var model: SearchViewModel
     var onTapItem: (BangumiItem) -> Void
+    @Environment(\.colorScheme) private var colorScheme
     @FocusState private var isInputFocused: Bool
     @State private var advancedExpanded: Bool = false
     @State private var newTagDraft: String = ""
@@ -220,12 +221,14 @@ public struct SearchView: View {
                     .foregroundStyle(model.ratingMin == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.accentColor))
                     .contentTransition(.numericText())
             }
+            // 左右内边距留给拖块 + 投影，避免贴边时被 GlassPanel / glassEffect 裁切。
             Slider(value: binding, in: 0...10, step: 0.5) { editing in
                 if !editing {
                     model.advancedFilterChanged()
                 }
             }
             .tint(.accentColor)
+            .padding(.horizontal, 12)
         }
     }
 
@@ -265,12 +268,19 @@ public struct SearchView: View {
         Button(action: action) {
             Text(title)
                 .font(.caption.weight(isSelected ? .semibold : .medium))
-                .foregroundStyle(isSelected ? AnyShapeStyle(Color.white) : AnyShapeStyle(.primary))
+                // 选中：accent 填充 + 反色文字（浅色黑底白字 / 深色白底黑字）。
+                .foregroundStyle(
+                    isSelected
+                        ? AnyShapeStyle(CezzuMonochrome.onFill(for: colorScheme))
+                        : AnyShapeStyle(.primary)
+                )
                 .padding(.horizontal, 11)
                 .padding(.vertical, 6)
                 .glassBackground(
                     in: Capsule(),
-                    tint: isSelected ? Color.accentColor.opacity(0.85) : Color.secondary.opacity(0.12)
+                    tint: isSelected
+                        ? CezzuMonochrome.fill(for: colorScheme).opacity(0.92)
+                        : Color.secondary.opacity(0.12)
                 )
         }
         .buttonStyle(.plain)
