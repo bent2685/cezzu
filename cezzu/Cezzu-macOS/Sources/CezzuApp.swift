@@ -16,8 +16,6 @@ struct CezzuApp: App {
                     CezzuRoot(session: session)
                         .environment(\.playerPresentationController, makePresentationController())
                         .environment(\.playerInteractionController, makeInteractionController())
-                        // 黑白 monochrome：浅色黑 / 深色白。
-                        .tint(Color.accentColor)
                 } else {
                     ProgressView("正在启动…")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -42,7 +40,6 @@ struct CezzuApp: App {
                 .environment(session.history)
                 .environment(\.playerPresentationController, makePresentationController())
                 .environment(\.playerInteractionController, makeInteractionController())
-                .tint(Color.accentColor)
             }
         }
         .defaultSize(width: 1280, height: 720)

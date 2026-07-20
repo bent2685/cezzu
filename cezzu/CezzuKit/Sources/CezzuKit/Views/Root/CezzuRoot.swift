@@ -557,34 +557,7 @@ struct SplitRootView: View {
     }
 
     private var sidebar: some View {
-        // macOS：不用 List selection（它的高亮走 App Accent，深色 monochrome 白会叠成白底白字）。
-        // 自绘蓝色选中条，深浅色统一蓝色 + 白字。iPad / iOS 仍用系统 selection。
-        #if os(macOS)
-        List {
-            ForEach(
-                [SidebarItem.home, .follow, .history, .settings]
-            ) { item in
-                let isSelected = sidebarItem == item
-                Button {
-                    sidebarItem = item
-                } label: {
-                    Label(item.label, systemImage: item.systemImage)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(isSelected ? Color.white : Color.primary)
-                .listRowBackground(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        // 写死系统蓝，不走 monochrome AccentColor（深色为白会叠字）。
-                        .fill(isSelected ? Color.blue : Color.clear)
-                        .padding(.vertical, 1)
-                )
-            }
-        }
-        .listStyle(.sidebar)
-        .navigationTitle("Cezzu")
-        #else
+        // 原生 List + sidebar 样式；选中高亮交给系统，不自绘背景/颜色。
         List(selection: $sidebarItem) {
             ForEach(
                 [SidebarItem.home, .follow, .history, .settings]
@@ -593,8 +566,8 @@ struct SplitRootView: View {
                     .tag(item)
             }
         }
+        .listStyle(.sidebar)
         .navigationTitle("Cezzu")
-        #endif
     }
 
     private var detailChromeFillColor: Color {
