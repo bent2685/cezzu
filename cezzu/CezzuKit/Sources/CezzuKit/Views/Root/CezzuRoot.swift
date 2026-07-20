@@ -261,6 +261,11 @@ struct CompactRootView: View {
             }
         }
         .animation(.spring(response: 0.34, dampingFraction: 0.92), value: activePlayerRequest != nil)
+        // iOS 先 empty session 出 UI，再换 persistent：@State searchModel 不会随 session 重建，
+        // 必须把 history 绑到新 store，否则搜索历史只写内存，且旧 container 释放后会闪退。
+        .onChange(of: ObjectIdentifier(session.searchHistory)) { _, _ in
+            searchModel.bindHistory(session.searchHistory)
+        }
     }
 
     @ViewBuilder
@@ -427,10 +432,16 @@ struct SplitRootView: View {
     }
 
     var body: some View {
-        if let playerRequest = activePlayerRequest {
-            standalonePlayer(for: playerRequest)
-        } else {
-            splitNavigation
+        Group {
+            if let playerRequest = activePlayerRequest {
+                standalonePlayer(for: playerRequest)
+            } else {
+                splitNavigation
+            }
+        }
+        // 与 CompactRootView 相同：session 从 empty 升级到 persistent 时重绑搜索历史 store。
+        .onChange(of: ObjectIdentifier(session.searchHistory)) { _, _ in
+            searchModel.bindHistory(session.searchHistory)
         }
     }
 

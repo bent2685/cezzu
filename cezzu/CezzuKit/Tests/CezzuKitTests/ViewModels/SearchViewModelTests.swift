@@ -219,6 +219,26 @@ struct SearchViewModelTests {
         #expect(vm.historyKeywords.isEmpty)
     }
 
+    @Test("bindHistory switches store without resetting search text")
+    func bindHistorySwitchesStore() async {
+        let api = HomeViewModelTests.FakeBangumiAPI()
+        api.keywordSearchResult = .success([Self.makeItem(id: 1, name: "X")])
+        let emptyStore = InMemorySearchHistoryStore(seed: ["旧"])
+        let persistentStore = InMemorySearchHistoryStore()
+        let vm = SearchViewModel(api: api, history: emptyStore)
+        vm.text = "海贼王"
+        #expect(vm.historyKeywords == ["旧"])
+
+        // 模拟 iOS Root：empty session → persistent session 后重绑
+        vm.bindHistory(persistentStore)
+        #expect(vm.historyKeywords.isEmpty)
+        #expect(vm.text == "海贼王")
+
+        await vm.submit()
+        #expect(persistentStore.recent == ["海贼王"])
+        #expect(emptyStore.recent == ["旧"])
+    }
+
     @Test("submit forwards advanced filter into the request")
     func submitForwardsAdvancedFilter() async {
         let api = HomeViewModelTests.FakeBangumiAPI()

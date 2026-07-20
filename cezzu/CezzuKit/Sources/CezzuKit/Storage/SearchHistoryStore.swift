@@ -30,12 +30,17 @@ public final class SearchHistoryStore: SearchHistoryStoring {
     /// 历史条数上限。再多就把最旧的剔除。
     public static let maxEntries: Int = 20
 
+    /// 必须强引用 container：`ModelContext` 不保证保住 container 的生命周期。
+    /// iOS 启动会先建 empty session，再换 persistent；若 SearchViewModel 仍持有 empty 的 store，
+    /// container 被释放后 `context.fetch` 会在主线程直接闪退（不是 throw）。
+    private let container: ModelContainer
     private let context: ModelContext
 
     /// 最近搜索（按 `lastUsedAt` 倒序）。view 直接绑定这个数组渲染下拉。
     public private(set) var recent: [String] = []
 
     public init(context: ModelContext) {
+        self.container = context.container
         self.context = context
         try? refresh()
     }

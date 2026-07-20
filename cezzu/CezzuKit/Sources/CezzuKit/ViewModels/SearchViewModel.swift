@@ -31,7 +31,8 @@ public final class SearchViewModel {
     public static let liveSearchMinLength: Int = 2
 
     private let api: BangumiAPIClientProtocol
-    private let history: SearchHistoryStoring?
+    /// 可变：iOS Root 会先注入 empty session 的 store，再在 persistent session 就绪后 `bindHistory` 切过去。
+    private var history: SearchHistoryStoring?
     private let debounceMilliseconds: UInt64
     private var currentTask: Task<Void, Never>?
     private var debounceTask: Task<Void, Never>?
@@ -68,6 +69,12 @@ public final class SearchViewModel {
         self.api = api
         self.history = history
         self.debounceMilliseconds = debounceMilliseconds
+    }
+
+    /// 切换底层历史 store（不重置搜索态）。
+    /// iOS 启动路径：empty → persistent 时由 Root 调用，避免历史写进会被丢弃的内存 store。
+    public func bindHistory(_ history: SearchHistoryStoring?) {
+        self.history = history
     }
 
     /// 历史关键字（最近在前），UI 直接绑定渲染。
