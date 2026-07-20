@@ -719,12 +719,14 @@ public struct DetailView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
                         hero(viewportSize: proxy.size)
+                        let contentWidth = detailContentWidth(for: proxy.size.width)
                         VStack(alignment: .leading, spacing: 0) {
-                            contentTabBar
+                            contentTabBar(width: contentWidth)
                                 .padding(.bottom, 28)
                             tabContent
                         }
-                        .frame(maxWidth: 1080, alignment: .leading)
+                        .frame(width: contentWidth, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, horizontalPadding(for: proxy.size.width))
                         .padding(.bottom, bottomInset)
                     }
@@ -1114,55 +1116,85 @@ public struct DetailView: View {
 
     // MARK: - Content below hero
 
+    private func detailContentWidth(for viewportWidth: CGFloat) -> CGFloat {
+        min(1080, viewportWidth) - horizontalPadding(for: viewportWidth) * 2
+    }
+
     @ViewBuilder
-    private var contentTabBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 4) {
-                ForEach(DetailTab.allCases, id: \.self) { tab in
-                    let selected = model.selectedTab == tab
-                    Button {
-                        Task { await model.selectTab(tab) }
-                    } label: {
-                        Text(tab.title)
-                            .font(.subheadline.weight(selected ? .semibold : .medium))
-                            .foregroundStyle(selected ? palette.textPrimary : palette.textTertiary)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .frame(minHeight: 36)
-                            .background {
-                                Capsule(style: .continuous)
-                                    .fill(selected ? palette.surfaceRaised : Color.clear)
-                                    .overlay {
-                                        if selected {
-                                            Capsule(style: .continuous)
-                                                .strokeBorder(palette.hairline, lineWidth: 1)
-                                        }
-                                    }
-                                    .shadow(
-                                        color: selected
-                                            ? .black.opacity(colorScheme == .dark ? 0.35 : 0.08)
-                                            : .clear,
-                                        radius: 8,
-                                        y: 2
-                                    )
-                            }
-                            .contentShape(Capsule(style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-                    .animation(.easeOut(duration: 0.18), value: selected)
-                }
-            }
-            .padding(5)
-            .background {
-                Capsule(style: .continuous)
-                    .fill(palette.surface.opacity(colorScheme == .dark ? 0.55 : 0.72))
-                    .overlay {
-                        Capsule(style: .continuous)
-                            .strokeBorder(palette.hairline.opacity(0.7), lineWidth: 1)
-                    }
+    private func contentTabBar(width: CGFloat) -> some View {
+        // 能放下就贴合内容；放不下则钉死在内容区宽度内，tabs 在容器里横滚。
+        // 竖向 ScrollView 里若不限制，HStack ideal width 会把整页撑出屏宽。
+        let maxWidth = max(0, width)
+        ViewThatFits(in: .horizontal) {
+            tabBarTrack(scrolling: false)
+            tabBarTrack(scrolling: true)
+                .frame(width: maxWidth, alignment: .leading)
+                .clipShape(Capsule(style: .continuous))
+        }
+        .frame(maxWidth: maxWidth, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func tabBarTrack(scrolling: Bool) -> some View {
+        let tabs = HStack(spacing: 4) {
+            ForEach(DetailTab.allCases, id: \.self) { tab in
+                tabBarItem(tab)
             }
         }
-        .scrollClipDisabled()
+        .padding(5)
+
+        Group {
+            if scrolling {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    tabs
+                }
+            } else {
+                tabs
+            }
+        }
+        .background {
+            Capsule(style: .continuous)
+                .fill(palette.surface.opacity(colorScheme == .dark ? 0.55 : 0.72))
+                .overlay {
+                    Capsule(style: .continuous)
+                        .strokeBorder(palette.hairline.opacity(0.7), lineWidth: 1)
+                }
+        }
+    }
+
+    @ViewBuilder
+    private func tabBarItem(_ tab: DetailTab) -> some View {
+        let selected = model.selectedTab == tab
+        Button {
+            Task { await model.selectTab(tab) }
+        } label: {
+            Text(tab.title)
+                .font(.subheadline.weight(selected ? .semibold : .medium))
+                .foregroundStyle(selected ? palette.textPrimary : palette.textTertiary)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .frame(minHeight: 36)
+                .background {
+                    Capsule(style: .continuous)
+                        .fill(selected ? palette.surfaceRaised : Color.clear)
+                        .overlay {
+                            if selected {
+                                Capsule(style: .continuous)
+                                    .strokeBorder(palette.hairline, lineWidth: 1)
+                            }
+                        }
+                        .shadow(
+                            color: selected
+                                ? .black.opacity(colorScheme == .dark ? 0.35 : 0.08)
+                                : .clear,
+                            radius: 8,
+                            y: 2
+                        )
+                }
+                .contentShape(Capsule(style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .animation(.easeOut(duration: 0.18), value: selected)
     }
 
     @ViewBuilder
