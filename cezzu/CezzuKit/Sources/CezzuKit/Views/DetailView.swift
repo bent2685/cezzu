@@ -548,14 +548,25 @@ public final class DetailViewModel {
         }
     }
 
+    /// 取色用小图：大图要下好几百 KB，期间整页停在 fallback 色上，进页面会闪一下；
+    /// 小图通常在列表卡片处已经缓存，几乎瞬时。色板不需要高清。
     private func loadBackdropColorIfNeeded() async {
         guard !loadedBackdropColor else { return }
         loadedBackdropColor = true
-        guard let url = URL(string: item.images.best.isEmpty ? item.images.large : item.images.best) else {
-            return
-        }
-        if let extracted = await CoverColorExtractor.loadAndExtract(from: url) {
-            coverPalette = extracted
+        let candidates = [
+            item.images.grid,
+            item.images.small,
+            item.images.medium,
+            item.images.common,
+            item.images.large,
+        ]
+        for candidate in candidates {
+            let trimmed = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, let url = URL(string: trimmed) else { continue }
+            if let extracted = await CoverColorExtractor.loadAndExtract(from: url) {
+                coverPalette = extracted
+                return
+            }
         }
     }
 
@@ -704,6 +715,8 @@ public final class DetailViewModel {
 
 private enum DetailStyle {
     static let cornerRadius: CGFloat = 8
+    /// 封面取色落地时的过渡。整页底色与 hero 渐变收口必须共用它，否则会错开露边。
+    static let paletteTransition: Animation = .easeInOut(duration: 0.5)
 
     /// 整页底色由封面主色驱动（与首页 banner 呼应），文字层级仍用固定对比色。
     static func palette(for colorScheme: ColorScheme, cover: CoverColorPalette) -> DetailPalette {
@@ -815,9 +828,9 @@ public struct DetailView: View {
         // 底色铺在 clipped 的外面，否则铺不到 dock 所在的底部安全区，
         // 那一条会露出 TabView 自己的底色。
         .background {
-            palette.background
+            pageBackdrop
                 .ignoresSafeArea()
-                .animation(.easeInOut(duration: 0.5), value: model.coverPalette)
+                .animation(DetailStyle.paletteTransition, value: model.coverPalette)
         }
         .toolbarBackground(.hidden, for: .automatic)
         .task {
@@ -853,7 +866,26 @@ public struct DetailView: View {
             .clipped()
             .overlay { palette.background.opacity(colorScheme == .dark ? 0.16 : 0.04) }
             .overlay { backdropScrim }
+            // 必须和整页底色用同一条动画曲线：取色落地时若两者节奏不一致，
+            // 渐变收口色与页面底色会错开半秒，露出一条硬边。
+            .animation(DetailStyle.paletteTransition, value: model.coverPalette)
             .allowsHitTesting(false)
+    }
+
+    /// 整页底：实心主色 + 底部 dock 区的封面色回光，让 dock 区不是一块死色，
+    /// 与首页「实心底 + 呼吸光」的处理呼应。
+    private var pageBackdrop: some View {
+        ZStack {
+            palette.background
+            LinearGradient(
+                colors: [
+                    Color.clear,
+                    model.coverPalette.lifted.color.opacity(colorScheme == .dark ? 0.22 : 0.14),
+                ],
+                startPoint: .center,
+                endPoint: .bottom
+            )
+        }
     }
 
     private var backdropScrim: some View {
