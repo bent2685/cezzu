@@ -99,10 +99,6 @@ public struct HomeView: View {
             try? history.refresh()
             await initial
         }
-        .refreshable {
-            try? history.refresh()
-            await model.reload()
-        }
         .navigationTitle("")
         .toolbarBackground(.hidden, for: .automatic)
     }

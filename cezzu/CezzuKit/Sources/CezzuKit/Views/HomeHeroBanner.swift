@@ -11,8 +11,10 @@ enum HomeHeroBannerLayout {
     static let titleLineLimit: Int = 2
     static let summaryLineLimit: Int = 4
     static let maxTags: Int = 3
-    static let pageDotSize: CGFloat = 6
-    static let pageDotSpacing: CGFloat = 7
+    static let pageBarHeight: CGFloat = 4
+    static let pageBarWidth: CGFloat = 12
+    static let pageBarActiveWidth: CGFloat = 24
+    static let pageBarSpacing: CGFloat = 6
     static let swipeCommitRatio: CGFloat = 0.22
     static let swipeCommitDistance: CGFloat = 64
     /// 渐变从图片高度的这个比例开始出现，图片底边处完全实心。
@@ -95,33 +97,40 @@ public struct HomeHeroBanner: View {
         if items.isEmpty {
             EmptyView()
         } else {
-            carousel
-                .frame(maxWidth: .infinity)
-                .frame(height: totalHeight)
+            // 下拉过滚时顶部锚定屏幕、整体拉高，图片随之放大，顶部不露缝
+            // （静止时 banner 顶部即全局 y=0，minY > 0 即过滚量）
+            GeometryReader { geo in
+                let stretch = max(0, geo.frame(in: .global).minY)
+                carousel(stretch: stretch)
+                    .frame(height: totalHeight + stretch)
+                    .offset(y: -stretch)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: totalHeight)
         }
     }
 
     // MARK: - carousel
 
     @ViewBuilder
-    private var carousel: some View {
+    private func carousel(stretch: CGFloat) -> some View {
         GeometryReader { geo in
             let width = max(geo.size.width, 1)
             ZStack {
                 if activeIndex > 0 {
-                    bannerPage(item: items[activeIndex - 1], interactive: false)
+                    bannerPage(item: items[activeIndex - 1], interactive: false, stretch: stretch)
                         .offset(x: -width + dragOffset)
                 }
                 if activeIndex + 1 < items.count {
-                    bannerPage(item: items[activeIndex + 1], interactive: false)
+                    bannerPage(item: items[activeIndex + 1], interactive: false, stretch: stretch)
                         .offset(x: width + dragOffset)
                 }
 
-                bannerPage(item: items[activeIndex], interactive: true)
+                bannerPage(item: items[activeIndex], interactive: true, stretch: stretch)
                     .offset(x: dragOffset)
                     .gesture(swipeGesture(pageWidth: width))
             }
-            .frame(width: width, height: totalHeight)
+            .frame(width: width, height: totalHeight + stretch)
             .clipped()
         }
     }
@@ -167,13 +176,13 @@ public struct HomeHeroBanner: View {
     }
 
     @ViewBuilder
-    private func bannerPage(item: BangumiItem, interactive: Bool) -> some View {
+    private func bannerPage(item: BangumiItem, interactive: Bool, stretch: CGFloat) -> some View {
         ZStack(alignment: .bottom) {
                 // ①② 底层：封面（只占上部）+ 渐变收口；下方剩余区域实心主色
                 VStack(spacing: 0) {
                     coverImage(for: item)
                         .frame(maxWidth: .infinity)
-                        .frame(height: imageHeight)
+                        .frame(height: imageHeight + stretch)
                         .clipped()
                         .overlay {
                             // 整图轻染主色，和页面色调统一
@@ -187,16 +196,16 @@ public struct HomeHeroBanner: View {
                 .animation(.easeInOut(duration: 0.65), value: palette)
 
                 // ③ 顶层：文案 + indicator，锚定底部，上缘自然压在渐变区上
-                VStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 10) {
                     metaBlock(for: item)
-                    pageDots
+                    pageBars
                         .padding(.top, 2)
                 }
                 .padding(.horizontal, HomeHeroBannerLayout.horizontalPadding)
                 .padding(.bottom, 10)
             }
             .frame(maxWidth: .infinity)
-            .frame(height: totalHeight)
+            .frame(height: totalHeight + stretch)
             .contentShape(Rectangle())
             .onTapGesture {
                 guard interactive else { return }
@@ -260,15 +269,15 @@ public struct HomeHeroBanner: View {
 
     @ViewBuilder
     private func metaBlock(for item: BangumiItem) -> some View {
-        VStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 8) {
             Text(item.displayName)
                 .font(.system(size: 32, weight: .heavy, design: .rounded))
                 .foregroundStyle(.white)
-                .multilineTextAlignment(.center)
+                .multilineTextAlignment(.leading)
                 .lineLimit(HomeHeroBannerLayout.titleLineLimit)
                 .minimumScaleFactor(0.7)
                 .shadow(color: .black.opacity(0.4), radius: 10, y: 2)
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
             metaFactsRow(for: item)
 
@@ -283,10 +292,10 @@ public struct HomeHeroBanner: View {
                     .padding(.top, 2)
             }
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// 竞品同款居中一行：★评分 | 年份 | 标签,标签,标签
+    /// 一行事实信息：★评分 | 年份 | 标签,标签,标签
     @ViewBuilder
     private func metaFactsRow(for item: BangumiItem) -> some View {
         let facts = factTexts(for: item)
@@ -311,7 +320,7 @@ public struct HomeHeroBanner: View {
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(.white.opacity(0.92))
             .lineLimit(1)
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -330,21 +339,21 @@ public struct HomeHeroBanner: View {
     // MARK: - indicator
 
     @ViewBuilder
-    private var pageDots: some View {
+    private var pageBars: some View {
         if items.count > 1 {
-            HStack(spacing: HomeHeroBannerLayout.pageDotSpacing) {
+            HStack(spacing: HomeHeroBannerLayout.pageBarSpacing) {
                 ForEach(items.indices, id: \.self) { index in
-                    Circle()
+                    Capsule()
                         .fill(index == activeIndex ? Color.white : Color.white.opacity(0.35))
                         .frame(
-                            width: HomeHeroBannerLayout.pageDotSize,
-                            height: HomeHeroBannerLayout.pageDotSize
+                            width: index == activeIndex
+                                ? HomeHeroBannerLayout.pageBarActiveWidth
+                                : HomeHeroBannerLayout.pageBarWidth,
+                            height: HomeHeroBannerLayout.pageBarHeight
                         )
-                        .scaleEffect(index == activeIndex ? 1.25 : 1)
                         .animation(.spring(response: 0.32, dampingFraction: 0.8), value: activeIndex)
                 }
             }
-            .frame(maxWidth: .infinity)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Banner 第 \(activeIndex + 1) / \(items.count) 页")
         }
