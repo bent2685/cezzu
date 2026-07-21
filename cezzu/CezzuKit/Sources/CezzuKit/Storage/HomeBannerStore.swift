@@ -41,6 +41,16 @@ public final class HomeBannerStore: @unchecked Sendable {
         lhs.map(\.id) == rhs.map(\.id)
     }
 
+    /// 旧版本写的缓存缺 info / metaTags / heat 这些后加的字段。
+    /// id 序列没变时本不会写盘，缓存就会一直缺字段，所以这里单独放行一次覆盖。
+    public static func needsFieldBackfill(cached: [BangumiItem], fresh: [BangumiItem]) -> Bool {
+        zip(cached, fresh).contains { cached, fresh in
+            (cached.info.isEmpty && !fresh.info.isEmpty)
+                || (cached.metaTags.isEmpty && !fresh.metaTags.isEmpty)
+                || (cached.heat == 0 && fresh.heat > 0)
+        }
+    }
+
     /// 读缓存（内存命中优先）。文件缺失或损坏时返回空数组。
     public func load() -> [BangumiItem] {
         lock.lock()
@@ -53,8 +63,8 @@ public final class HomeBannerStore: @unchecked Sendable {
 
     /// 用最新热门列表同步缓存。
     ///
-    /// - 前 N 条 id 未变：保留原缓存，返回 `false`
-    /// - id 变了：写入新前 N 条，返回 `true`
+    /// - 前 N 条 id 未变且字段齐全：保留原缓存，返回 `false`
+    /// - id 变了，或老缓存缺新加的字段：写入新前 N 条，返回 `true`
     /// - 热门为空：不动缓存，返回 `false`
     @discardableResult
     public func updateIfNeeded(from trending: [BangumiItem]) -> Bool {
@@ -65,7 +75,7 @@ public final class HomeBannerStore: @unchecked Sendable {
         defer { lock.unlock() }
 
         let current = memory ?? readFromDisk()
-        if Self.idsMatch(current, top) {
+        if Self.idsMatch(current, top), !Self.needsFieldBackfill(cached: current, fresh: top) {
             memory = current
             return false
         }

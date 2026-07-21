@@ -74,6 +74,38 @@ struct HomeBannerStoreTests {
         #expect(store.load().first?.displayName == "old1")
     }
 
+    /// 老版本写的缓存没有 info / metaTags / heat；id 不变也必须被覆盖一次，
+    /// 否则升级后 banner 永远显示不出热度和分类标签。
+    @Test("stale cache missing new fields is backfilled even when ids match")
+    func backfillsMissingFields() {
+        let (store, url) = tempStore()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let legacy = (1...5).map { item(id: $0, name: "old\($0)") }
+        #expect(store.updateIfNeeded(from: legacy) == true)
+        #expect(store.load().first?.heat == 0)
+
+        let enriched = (1...5).map {
+            item(id: $0, name: "new\($0)").withHeat(1000 + $0)
+        }
+        #expect(store.updateIfNeeded(from: enriched) == true)
+        #expect(store.load().first?.heat == 1001)
+
+        // 回填过一次之后就不该再重复写盘
+        #expect(store.updateIfNeeded(from: enriched) == false)
+    }
+
+    @Test("needsFieldBackfill only fires when the cache is the one missing data")
+    func backfillPredicate() {
+        let bare = item(id: 1)
+        let hot = item(id: 1).withHeat(500)
+        #expect(HomeBannerStore.needsFieldBackfill(cached: [bare], fresh: [hot]))
+        #expect(!HomeBannerStore.needsFieldBackfill(cached: [hot], fresh: [hot]))
+        // 新数据反而缺字段（接口抽风）时不能倒着覆盖
+        #expect(!HomeBannerStore.needsFieldBackfill(cached: [hot], fresh: [bare]))
+        #expect(!HomeBannerStore.needsFieldBackfill(cached: [], fresh: []))
+    }
+
     @Test("changed top five ids rewrites cache")
     func changedIDsRewrites() {
         let (store, url) = tempStore()
