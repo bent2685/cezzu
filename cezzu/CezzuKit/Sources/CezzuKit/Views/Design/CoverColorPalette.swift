@@ -31,6 +31,15 @@ public struct CoverColorPalette: Hashable, Sendable, Codable {
         )
     }
 
+    /// 极浅的同色调，给浅色模式整页底色用 —— 保留封面色相，但不留纯白。
+    public var washed: CoverColorPalette {
+        CoverColorPalette(
+            red: red * 0.10 + 0.90,
+            green: green * 0.10 + 0.90,
+            blue: blue * 0.10 + 0.90
+        )
+    }
+
     /// 略提亮，给 banner 中部光晕。
     public var lifted: CoverColorPalette {
         CoverColorPalette(

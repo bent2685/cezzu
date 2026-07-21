@@ -1,5 +1,3 @@
-import CoreImage
-import CoreImage.CIFilterBuiltins
 import SwiftUI
 
 /// 规则因反爬策略要求用户解验证码时，UI 拿着它打开 `CaptchaVerificationSheet`。
@@ -66,6 +64,11 @@ public enum DetailTab: String, CaseIterable, Hashable, Sendable {
     case reviews
     case staff
 
+    /// 出现在 tab 栏里的项。「吐槽」不在其中 —— 它作为概览最下方的一段常驻展示。
+    public static var tabBarCases: [DetailTab] {
+        allCases.filter { $0 != .comments }
+    }
+
     public var title: String {
         switch self {
         case .overview:
@@ -103,7 +106,13 @@ public final class DetailViewModel {
     public private(set) var platform: String = ""
     public private(set) var episodeDuration: String = ""
     public private(set) var ratingTotal: Int = 0
-    public private(set) var backdropColor: Color = Color(red: 0.10, green: 0.16, blue: 0.28)
+    public private(set) var metaTags: [String] = []
+    public private(set) var episodeCount: Int = 0
+    public private(set) var collection: BangumiCollection?
+    public private(set) var infobox: [BangumiInfoboxEntry] = []
+    public private(set) var summary: String = ""
+    /// 封面提取的主色，详情页整页底色跟着它走（与首页 banner 同一套取色）。
+    public private(set) var coverPalette: CoverColorPalette = .fallback
     public private(set) var loadingTabs: Set<DetailTab> = []
     public private(set) var tabErrors: [DetailTab: String] = [:]
     public let historyHint: HistoryResumeHint?
@@ -121,6 +130,7 @@ public final class DetailViewModel {
     private let searchCoordinator: SourceSearchCoordinating
     private let engine: RuleEngine
     private var loadedBackdropColor: Bool = false
+    private var loadedSubject: Bool = false
 
     public init(
         item: BangumiItem,
@@ -138,13 +148,73 @@ public final class DetailViewModel {
         self.engine = engine
         self.tags = item.tags
         self.airDate = item.airDate
+        self.summary = item.summary
+        self.metaTags = item.metaTags
+        self.episodeCount = item.episodeCount
+        self.platform = item.platform
+        self.episodeDuration = item.episodeDuration
+        self.ratingTotal = item.ratingTotal
+        self.collection = item.collection
+        self.infobox = item.infobox
     }
 
     public func load() async {
         async let backdrop: Void = loadBackdropColorIfNeeded()
         async let sources: Void = loadSourcesIfNeeded()
-        async let tags: Void = loadTagsIfNeeded()
-        _ = await (backdrop, sources, tags)
+        async let subject: Void = loadSubjectIfNeeded()
+        _ = await (backdrop, sources, subject)
+    }
+
+    /// 热度：trending 带过来的榜单热度优先，否则用收藏总人数兜底。
+    public var heat: Int {
+        item.heat > 0 ? item.heat : (collection?.total ?? 0)
+    }
+
+    /// 热度是不是「在榜热度」——决定详情页标注用「热度」还是「收藏」。
+    public var heatIsTrending: Bool {
+        item.heat > 0
+    }
+
+    /// 资料区条目：从 infobox 里挑对观众有用的，保持这个顺序。
+    public var factRows: [(String, String)] {
+        var rows: [(String, String)] = []
+        func append(_ label: String, _ keys: [String]) {
+            if let value = infoboxValue(keys) {
+                rows.append((label, value))
+            }
+        }
+        if !airDate.isEmpty {
+            rows.append(("放送开始", airDate))
+        }
+        append("放送星期", ["放送星期"])
+        if episodeCount > 0 {
+            rows.append(("话数", "\(episodeCount) 话"))
+        }
+        if !episodeDuration.isEmpty {
+            rows.append(("片长", episodeDuration))
+        }
+        if !platform.isEmpty {
+            rows.append(("类型", platform))
+        }
+        append("导演", ["导演"])
+        append("原作", ["原作"])
+        append("脚本", ["脚本", "系列构成"])
+        append("音乐", ["音乐"])
+        append("人物设定", ["人物设定"])
+        append("动画制作", ["动画制作", "製作", "制作"])
+        append("播放电视台", ["播放电视台"])
+        append("别名", ["别名"])
+        append("官方网站", ["官方网站"])
+        return rows
+    }
+
+    private func infoboxValue(_ keys: [String]) -> String? {
+        for key in keys {
+            if let hit = infobox.first(where: { $0.key == key })?.value, !hit.isEmpty {
+                return hit
+            }
+        }
+        return nil
     }
 
     public func updateRules(_ newRules: [CezzuRule]) async {
@@ -484,14 +554,15 @@ public final class DetailViewModel {
         guard let url = URL(string: item.images.best.isEmpty ? item.images.large : item.images.best) else {
             return
         }
-        do {
-            let (data, _) = try await URLSession.shared.data(from: url)
-            if let extracted = DetailBackdropColorSampler.averageColor(from: data) {
-                backdropColor = extracted
-            }
-        } catch {
-            // 背景主色提取失败时保持默认色，不影响主流程。
+        if let extracted = await CoverColorExtractor.loadAndExtract(from: url) {
+            coverPalette = extracted
         }
+    }
+
+    /// 吐槽常驻概览底部，进页面就拉一次。
+    public func loadCommentsIfNeeded() async {
+        guard comments.isEmpty, !loadingTabs.contains(.comments), item.id > 0 else { return }
+        await loadComments()
     }
 
     private func loadComments() async {
@@ -505,13 +576,33 @@ public final class DetailViewModel {
         }
     }
 
-    private func loadTagsIfNeeded() async {
-        guard tags.isEmpty, item.id > 0 else { return }
+    /// 拉完整 subject 补齐 trending / 搜索结果里没有的字段
+    /// （简介、标签、infobox、收藏分布、总话数）。
+    private func loadSubjectIfNeeded() async {
+        guard !loadedSubject, item.id > 0 else { return }
         do {
             let subject = try await api.fetchSubject(subjectID: item.id)
-            tags = subject.tags
+            loadedSubject = true
+            if !subject.tags.isEmpty {
+                tags = subject.tags
+            }
             if !subject.airDate.isEmpty {
                 airDate = subject.airDate
+            }
+            if !subject.summary.isEmpty {
+                summary = subject.summary
+            }
+            if !subject.metaTags.isEmpty {
+                metaTags = subject.metaTags
+            }
+            if !subject.infobox.isEmpty {
+                infobox = subject.infobox
+            }
+            if subject.episodeCount > 0 {
+                episodeCount = subject.episodeCount
+            }
+            if let subjectCollection = subject.collection {
+                collection = subjectCollection
             }
             eps = subject.eps
             platform = subject.platform
@@ -611,49 +702,16 @@ public final class DetailViewModel {
     }
 }
 
-enum DetailBackdropColorSampler {
-    static func averageColor(from data: Data) -> Color? {
-        guard let ciImage = CIImage(data: data) else { return nil }
-        let extent = ciImage.extent
-        guard !extent.isEmpty else { return nil }
-
-        let filter = CIFilter.areaAverage()
-        filter.inputImage = ciImage
-        filter.extent = extent
-
-        let context = CIContext(options: [.workingColorSpace: NSNull()])
-        guard let output = filter.outputImage else { return nil }
-
-        var bitmap = [UInt8](repeating: 0, count: 4)
-        context.render(
-            output,
-            toBitmap: &bitmap,
-            rowBytes: 4,
-            bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
-            format: .RGBA8,
-            colorSpace: nil
-        )
-
-        let red = brighten(Double(bitmap[0]) / 255.0)
-        let green = brighten(Double(bitmap[1]) / 255.0)
-        let blue = brighten(Double(bitmap[2]) / 255.0)
-        return Color(red: red, green: green, blue: blue)
-    }
-
-    private static func brighten(_ component: Double) -> Double {
-        min(max(component * 0.9 + 0.08, 0), 1)
-    }
-}
-
 private enum DetailStyle {
     static let cornerRadius: CGFloat = 8
 
-    static func palette(for colorScheme: ColorScheme) -> DetailPalette {
+    /// 整页底色由封面主色驱动（与首页 banner 呼应），文字层级仍用固定对比色。
+    static func palette(for colorScheme: ColorScheme, cover: CoverColorPalette) -> DetailPalette {
         switch colorScheme {
         case .dark:
             return DetailPalette(
-                background: Color(red: 0.020, green: 0.020, blue: 0.024),
-                backgroundRaised: Color(red: 0.055, green: 0.058, blue: 0.066),
+                background: cover.darkened.color,
+                backgroundRaised: cover.color.opacity(0.22),
                 surface: Color(red: 0.075, green: 0.080, blue: 0.092),
                 surfaceRaised: Color(red: 0.105, green: 0.110, blue: 0.125),
                 textPrimary: .white,
@@ -664,8 +722,8 @@ private enum DetailStyle {
             )
         default:
             return DetailPalette(
-                background: .white,
-                backgroundRaised: Color(red: 0.95, green: 0.96, blue: 0.97),
+                background: cover.washed.color,
+                backgroundRaised: cover.washed.color,
                 surface: Color.white.opacity(0.88),
                 surfaceRaised: Color(red: 0.93, green: 0.94, blue: 0.95),
                 textPrimary: Color(red: 0.05, green: 0.05, blue: 0.06),
@@ -716,11 +774,10 @@ public struct DetailView: View {
         GeometryReader { proxy in
             let bottomInset = max(112, proxy.safeAreaInsets.bottom + 56)
             ZStack(alignment: .topLeading) {
-                detailBackdrop(viewportSize: proxy.size)
-                    .frame(width: proxy.size.width, height: proxy.size.height)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
-                        hero(viewportSize: proxy.size)
+                        // 封面随内容一起滚（与首页 banner 同构），滚上去不会留在原地压住正文
+                        stretchyHero(viewportSize: proxy.size)
                         let contentWidth = detailContentWidth(for: proxy.size.width)
                         VStack(alignment: .leading, spacing: 0) {
                             contentTabBar(width: contentWidth)
@@ -752,6 +809,16 @@ public struct DetailView: View {
             .sensoryFeedback(.impact(flexibility: .soft, intensity: 0.7), trigger: heldCharacter?.id)
         }
         .ignoresSafeArea(edges: .top)
+        // 底色铺在 clipped 的外面，否则铺不到 dock 所在的底部安全区，
+        // 那一条会露出 TabView 自己的底色。
+        .background {
+            palette.background
+                .ignoresSafeArea()
+                .animation(.easeInOut(duration: 0.5), value: model.coverPalette)
+        }
+        // dock 背后那层系统底板与页面底色对不上，藏掉让 dock 直接浮在页面上。
+        // 用 .automatic 而非 .tabBar —— 后者在 macOS 不可用，CezzuKit 内不做平台分叉。
+        .toolbarBackground(.hidden, for: .automatic)
         .task {
             await model.load()
         }
@@ -773,165 +840,182 @@ public struct DetailView: View {
     }
 
     private var palette: DetailPalette {
-        DetailStyle.palette(for: colorScheme)
+        DetailStyle.palette(for: colorScheme, cover: model.coverPalette)
     }
 
+    /// 与首页 banner 同一套：封面铺满 hero 区，底部「透明 → 实心」收口到页面底色。
     @ViewBuilder
     private func detailBackdrop(viewportSize: CGSize) -> some View {
-        ZStack(alignment: .topTrailing) {
-            palette.background
-                .ignoresSafeArea()
-            backgroundCover
-                .frame(
-                    width: max(viewportSize.width * 0.72, 620),
-                    height: max(viewportSize.height * 0.72, 540)
-                )
-                .mask(backgroundCoverFeather)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                .clipped()
-                .opacity(palette.backdropOpacity)
-            LinearGradient(
-                colors: [
-                    palette.background,
-                    palette.background.opacity(0.96),
-                    palette.background.opacity(0.55),
-                    Color.clear,
-                ],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-            .ignoresSafeArea()
-            LinearGradient(
-                colors: [
-                    Color.clear,
-                    palette.background.opacity(0.62),
-                    palette.background,
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
-            LinearGradient(
-                colors: [
-                    palette.background.opacity(0.98),
-                    Color.clear,
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: 118)
-            .frame(maxHeight: .infinity, alignment: .top)
-            .ignoresSafeArea()
-        }
-        .allowsHitTesting(false)
+        backgroundCover
+            .frame(width: viewportSize.width)
+            .frame(maxHeight: .infinity)
+            .clipped()
+            .overlay { palette.background.opacity(colorScheme == .dark ? 0.16 : 0.04) }
+            .overlay { backdropScrim }
+            .allowsHitTesting(false)
     }
 
-    private var backgroundCoverFeather: some View {
-        Rectangle()
-            .mask {
-                LinearGradient(
-                    stops: [
-                        .init(color: .clear, location: 0.0),
-                        .init(color: .black, location: 0.18),
-                        .init(color: .black, location: 1.0),
-                    ],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-            }
-            .mask {
-                LinearGradient(
-                    stops: [
-                        .init(color: .black, location: 0.0),
-                        .init(color: .black, location: 0.76),
-                        .init(color: .clear, location: 1.0),
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            }
+    private var backdropScrim: some View {
+        ZStack {
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0),
+                    .init(color: .clear, location: 0.24),
+                    .init(color: palette.background.opacity(0.42), location: 0.5),
+                    .init(color: palette.background.opacity(0.8), location: 0.68),
+                    .init(color: palette.background.opacity(0.96), location: 0.85),
+                    .init(color: palette.background, location: 1.0),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            // 状态栏 / 返回键区域轻压暗，保证控件在亮画面上也可读
+            LinearGradient(
+                colors: [
+                    Color.black.opacity(colorScheme == .dark ? 0.45 : 0.25),
+                    Color.clear,
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 160)
+            .frame(maxHeight: .infinity, alignment: .top)
+        }
+    }
+
+    /// 下拉过滚时顶部锚定屏幕、整体拉高，封面随之放大 —— 与首页 banner 同一套，
+    /// 顶部不会因为 ScrollView 弹性而露出空隙。静止时 hero 顶边即全局 y=0。
+    @ViewBuilder
+    private func stretchyHero(viewportSize: CGSize) -> some View {
+        let baseHeight = heroHeight(for: viewportSize)
+        GeometryReader { geo in
+            let stretch = max(0, geo.frame(in: .global).minY)
+            hero(viewportSize: viewportSize, height: baseHeight + stretch)
+                .background(alignment: .top) {
+                    detailBackdrop(viewportSize: viewportSize)
+                }
+                .offset(y: -stretch)
+        }
+        .frame(height: baseHeight)
     }
 
     @ViewBuilder
-    private func hero(viewportSize: CGSize) -> some View {
+    private func hero(viewportSize: CGSize, height: CGFloat) -> some View {
         let isWide = viewportSize.width >= 760
-        Group {
-            if isWide {
-                HStack(alignment: .bottom, spacing: 30) {
-                    poster
-                    heroCopy(titleSize: 44)
-                        .frame(maxWidth: 720, alignment: .leading)
-                }
-            } else {
-                VStack(alignment: .leading, spacing: 22) {
-                    poster
-                    heroCopy(titleSize: 32)
-                }
-            }
-        }
-        .padding(.top, isWide ? 94 : 116)
-        .padding(.horizontal, horizontalPadding(for: viewportSize.width))
-        .padding(.bottom, 42)
-        .frame(maxWidth: .infinity, minHeight: heroHeight(for: viewportSize.width), alignment: .bottomLeading)
+        // 封面已经是整幅 backdrop，不再叠一张海报卡；文案直接压在渐变收口上。
+        heroCopy(titleSize: isWide ? 44 : 34)
+            .frame(maxWidth: isWide ? 760 : .infinity, alignment: .leading)
+            .padding(.top, isWide ? 94 : 116)
+            .padding(.horizontal, horizontalPadding(for: viewportSize.width))
+            .padding(.bottom, 28)
+            .frame(maxWidth: .infinity, minHeight: height, alignment: .bottomLeading)
     }
 
     @ViewBuilder
     private func heroCopy(titleSize: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(model.item.displayName)
+                .font(.system(size: titleSize, weight: .heavy, design: .rounded))
+                .foregroundStyle(palette.textPrimary)
+                .lineLimit(3)
+                .minimumScaleFactor(0.8)
+                .shadow(color: .black.opacity(colorScheme == .dark ? 0.4 : 0), radius: 10, y: 2)
             if model.item.name != model.item.displayName {
                 Text(model.item.name)
-                    .font(.headline.weight(.semibold))
+                    .font(.subheadline.weight(.medium))
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(2)
             }
-            Text(model.item.displayName)
-                .font(.system(size: titleSize, weight: .black))
-                .foregroundStyle(palette.textPrimary)
-                .lineLimit(3)
-                .minimumScaleFactor(0.82)
             heroMeta
-            if !model.item.summary.isEmpty {
-                Text(model.item.summary)
-                    .font(.callout)
-                    .lineSpacing(4)
-                    .foregroundStyle(palette.textSecondary)
-                    .lineLimit(3)
-                    .fixedSize(horizontal: false, vertical: true)
+            if !model.metaTags.isEmpty {
+                categoryChips
             }
             heroActionBar
         }
     }
 
+    /// 一行事实：★评分(人数) · 🔥热度 · 年份 · 话数 · 片长 · Rank
+    ///
+    /// 拼成单个 Text 让它自己流动换行；分隔点前用不换行空格粘住上一段，
+    /// 否则换行时「·」会被甩到行首。
     @ViewBuilder
     private var heroMeta: some View {
-        WrapLayout(spacing: 10, lineSpacing: 8) {
-            if model.item.ratingScore > 0 {
-                HStack(spacing: 4) {
-                    Label(String(format: "%.1f", model.item.ratingScore), systemImage: "star.fill")
-                        .foregroundStyle(.yellow)
-                    if model.ratingTotal > 0 {
-                        metadataText("(\(model.ratingTotal)人评分)")
-                    }
-                }
+        heroMetaText
+            .font(.subheadline.weight(.bold))
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.5 : 0), radius: 6, y: 1)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var heroMetaText: Text {
+        var segments: [Text] = []
+
+        if model.item.ratingScore > 0 {
+            var rating = Text(Image(systemName: "star.fill")).foregroundColor(.yellow)
+                + Text(" ")
+                + Text(String(format: "%.1f", model.item.ratingScore))
+                    .foregroundColor(palette.textPrimary)
+            if model.ratingTotal > 0 {
+                rating = rating + Text(" (\(DetailFormat.grouped(model.ratingTotal)))")
+                    .foregroundColor(palette.textTertiary)
             }
-            if !model.airDate.isEmpty {
-                Label(model.airDate, systemImage: "calendar")
+            segments.append(rating)
+        }
+
+        if model.heat > 0 {
+            let icon = model.heatIsTrending ? "flame.fill" : "person.2.fill"
+            segments.append(
+                Text(Image(systemName: icon)).foregroundColor(.orange)
+                    + Text(" ")
+                    + Text(DetailFormat.heat(model.heat)).foregroundColor(palette.textPrimary)
+            )
+        }
+
+        if !heroFacts.isEmpty {
+            segments.append(
+                Text(heroFacts.joined(separator: " · ")).foregroundColor(palette.textSecondary)
+            )
+        }
+
+        guard var combined = segments.first else { return Text("") }
+        for segment in segments.dropFirst() {
+            combined = combined
+                + Text("\u{00A0}·").foregroundColor(palette.textTertiary)
+                + Text(" ")
+                + segment
+        }
+        return combined
+    }
+
+    private var heroFacts: [String] {
+        var facts: [String] = []
+        if let year = HomeHeroBannerLayout.yearString(from: model.airDate) {
+            facts.append(year)
+        }
+        if model.episodeCount > 0 {
+            facts.append("\(model.episodeCount) 话")
+        }
+        if !model.episodeDuration.isEmpty {
+            facts.append(model.episodeDuration)
+        }
+        if model.item.rank > 0 {
+            facts.append("Rank #\(model.item.rank)")
+        }
+        return facts
+    }
+
+    /// 官方分类标签（TV / 日本 / 漫画改），无边框弱化处理。
+    @ViewBuilder
+    private var categoryChips: some View {
+        WrapLayout(spacing: 8, lineSpacing: 8) {
+            ForEach(model.metaTags.prefix(6), id: \.self) { tag in
+                Text(tag)
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(palette.textSecondary)
-            }
-            if model.item.rank > 0 {
-                metadataText("Rank #\(model.item.rank)")
-            }
-            if !model.platform.isEmpty {
-                metadataText(model.platform)
-            }
-            if model.eps > 0 {
-                metadataText("\(model.eps)话")
-            }
-            if !model.episodeDuration.isEmpty {
-                metadataText(model.episodeDuration)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(palette.textPrimary.opacity(0.08), in: Capsule(style: .continuous))
             }
         }
-        .font(.subheadline.weight(.bold))
     }
 
     @ViewBuilder
@@ -956,7 +1040,7 @@ public struct DetailView: View {
                     .fill(
                         LinearGradient(
                             colors: [
-                                model.backdropColor.opacity(0.80),
+                                model.coverPalette.lifted.color.opacity(0.80),
                                 palette.backgroundRaised,
                                 palette.background,
                             ],
@@ -966,34 +1050,6 @@ public struct DetailView: View {
                     )
             }
         }
-    }
-
-    @ViewBuilder
-    private var poster: some View {
-        let url = URL(string: model.item.images.best)
-        AsyncImage(url: url, transaction: Transaction(animation: .easeInOut(duration: 0.2))) { phase in
-            switch phase {
-            case .success(let image):
-                image
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            default:
-                Rectangle()
-                    .fill(palette.surfaceRaised)
-                    .overlay {
-                        Image(systemName: "tv")
-                            .font(.system(size: 32, weight: .light))
-                            .foregroundStyle(palette.textTertiary)
-                    }
-            }
-        }
-        .frame(width: 170, height: 238)
-        .clipShape(RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
-                .strokeBorder(palette.hairline, lineWidth: 1)
-        }
-        .shadow(color: .black.opacity(0.55), radius: 26, y: 16)
     }
 
     @ViewBuilder
@@ -1070,20 +1126,11 @@ public struct DetailView: View {
                 .lineLimit(1)
         }
         .font(.caption.weight(.bold))
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(
-            palette.surface.opacity(0.78),
-            in: RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
-                .stroke(palette.hairline, lineWidth: 1)
-        }
     }
 
-    private func heroHeight(for width: CGFloat) -> CGFloat {
-        width >= 760 ? 560 : 650
+    /// 与首页 banner 一致的观感：封面占视口一大半，文案压在底部渐变上。
+    private func heroHeight(for viewportSize: CGSize) -> CGFloat {
+        max(viewportSize.height * (viewportSize.width >= 760 ? 0.62 : 0.66), 460)
     }
 
     private func horizontalPadding(for width: CGFloat) -> CGFloat {
@@ -1149,7 +1196,7 @@ public struct DetailView: View {
     @ViewBuilder
     private func tabBarTrack(scrolling: Bool) -> some View {
         let tabs = HStack(spacing: 4) {
-            ForEach(DetailTab.allCases, id: \.self) { tab in
+            ForEach(DetailTab.tabBarCases, id: \.self) { tab in
                 tabBarItem(tab)
             }
         }
@@ -1232,7 +1279,8 @@ public struct DetailView: View {
                 case .overview:
                     overviewContent
                 case .comments:
-                    commentsContent
+                    // 吐槽已挪到概览底部，tab 栏不再有这一项
+                    overviewContent
                 case .characters:
                     charactersContent
                 case .reviews:
@@ -1251,12 +1299,18 @@ public struct DetailView: View {
     @ViewBuilder
     private var overviewContent: some View {
         VStack(alignment: .leading, spacing: 36) {
+            if !model.tags.isEmpty {
+                contentModule(eyebrow: "TAGS", title: "标签") {
+                    tagCloud
+                }
+            }
+
             watchModule
 
-            if !model.item.summary.isEmpty {
+            if !model.summary.isEmpty {
                 contentModule(eyebrow: "ABOUT", title: "简介") {
                     ExpandableSummary(
-                        text: model.item.summary,
+                        text: model.summary,
                         collapsedLineLimit: 5,
                         textColor: palette.textSecondary,
                         accentColor: palette.textPrimary
@@ -1264,9 +1318,91 @@ public struct DetailView: View {
                 }
             }
 
-            if !model.tags.isEmpty {
-                contentModule(eyebrow: "TAGS", title: "标签") {
-                    tagCloud
+            if let collection = model.collection, collection.total > 0 {
+                contentModule(eyebrow: "COLLECTION", title: "收藏") {
+                    collectionStats(collection)
+                }
+            }
+
+            if !model.factRows.isEmpty {
+                contentModule(eyebrow: "INFO", title: "资料") {
+                    factList
+                }
+            }
+
+            // 吐槽不再占一个 tab，常驻概览最下方
+            contentModule(eyebrow: "COMMENTS", title: "吐槽") {
+                overviewComments
+            }
+            .task { await model.loadCommentsIfNeeded() }
+        }
+    }
+
+    @ViewBuilder
+    private var overviewComments: some View {
+        if model.loadingTabs.contains(.comments) && model.comments.isEmpty {
+            HStack(spacing: 10) {
+                ProgressView().controlSize(.small)
+                Text("正在获取短评…")
+                    .font(.subheadline)
+                    .foregroundStyle(palette.textTertiary)
+            }
+        } else if let error = model.tabErrors[.comments], model.comments.isEmpty {
+            contentInlineHint(error)
+        } else if model.comments.isEmpty {
+            contentInlineHint("这部作品还没有短评。")
+        } else {
+            commentList
+        }
+    }
+
+    /// 收藏分布：在看 / 想看 / 看过 / 搁置 / 抛弃。
+    @ViewBuilder
+    private func collectionStats(_ collection: BangumiCollection) -> some View {
+        let entries: [(String, Int)] = [
+            ("在看", collection.doing),
+            ("想看", collection.wish),
+            ("看过", collection.collect),
+            ("搁置", collection.onHold),
+            ("抛弃", collection.dropped),
+        ].filter { $0.1 > 0 }
+
+        WrapLayout(spacing: 28, lineSpacing: 16) {
+            ForEach(entries, id: \.0) { label, count in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(DetailFormat.grouped(count))
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(palette.textPrimary)
+                    Text(label)
+                        .font(.caption)
+                        .foregroundStyle(palette.textTertiary)
+                }
+            }
+        }
+    }
+
+    /// 资料表：左标签右值，靠细分隔线分行，不用卡片。
+    @ViewBuilder
+    private var factList: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(model.factRows.enumerated()), id: \.offset) { index, row in
+                HStack(alignment: .top, spacing: 16) {
+                    Text(row.0)
+                        .font(.subheadline)
+                        .foregroundStyle(palette.textTertiary)
+                        .frame(width: 76, alignment: .leading)
+                    Text(row.1)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(palette.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+                .padding(.vertical, 11)
+
+                if index < model.factRows.count - 1 {
+                    Rectangle()
+                        .fill(palette.hairline)
+                        .frame(height: 1)
                 }
             }
         }
@@ -1276,23 +1412,14 @@ public struct DetailView: View {
     private var watchModule: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("WATCH")
-                        .font(.caption.weight(.semibold))
-                        .tracking(1.2)
-                        .foregroundStyle(palette.textTertiary)
-                    Text("选集播放")
-                        .font(.title2.weight(.bold))
-                        .foregroundStyle(palette.textPrimary)
-                }
+                Text("选集播放")
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(palette.textPrimary)
                 Spacer(minLength: 12)
                 if !model.currentEpisodes.isEmpty {
                     Text("\(model.currentEpisodes.count) 集")
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(palette.textTertiary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(palette.surfaceRaised, in: Capsule(style: .continuous))
                 }
             }
 
@@ -1300,17 +1427,7 @@ public struct DetailView: View {
                 sourceRail
                 episodesContent
             }
-            .padding(18)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                RoundedRectangle(cornerRadius: DetailContentStyle.moduleRadius, style: .continuous)
-                    .fill(palette.surface.opacity(colorScheme == .dark ? 0.72 : 0.88))
-            }
-            .clipShape(RoundedRectangle(cornerRadius: DetailContentStyle.moduleRadius, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: DetailContentStyle.moduleRadius, style: .continuous)
-                    .strokeBorder(palette.hairline, lineWidth: 1)
-            }
         }
     }
 
@@ -1527,7 +1644,7 @@ public struct DetailView: View {
 
     @ViewBuilder
     private func episodeCell(episode: Episode, index: Int, isResume: Bool) -> some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 2) {
             Text(episodeNumberLabel(for: episode, fallbackIndex: index))
                 .font(.caption2.weight(.bold))
                 .foregroundStyle(isResume ? CezzuMonochrome.fill(for: colorScheme) : palette.textTertiary)
@@ -1536,12 +1653,12 @@ public struct DetailView: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(palette.textPrimary)
                 .multilineTextAlignment(.center)
-                .lineLimit(2)
+                .lineLimit(1)
                 .frame(maxWidth: .infinity)
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 12)
-        .frame(maxWidth: .infinity, minHeight: 72)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity, minHeight: 46)
         .background {
             RoundedRectangle(cornerRadius: DetailContentStyle.chipRadius, style: .continuous)
                 .fill(
@@ -1579,31 +1696,22 @@ public struct DetailView: View {
 
     @ViewBuilder
     private var tagCloud: some View {
-        WrapLayout(spacing: 8, lineSpacing: 8) {
-            ForEach(model.tags, id: \.name) { tag in
+        // 紧凑排布：去掉描边与计数，缩小内边距，让标签成块而不是散落
+        WrapLayout(spacing: 6, lineSpacing: 6) {
+            ForEach(model.tags.prefix(DetailContentStyle.maxTagChips), id: \.name) { tag in
                 Button {
                     onTapTag(tag.name)
                 } label: {
-                    HStack(spacing: 5) {
-                        Text(tag.name)
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(palette.textSecondary)
-                        if tag.count > 0 {
-                            Text("\(tag.count)")
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(palette.textTertiary)
+                    Text(tag.name)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 4)
+                        .background {
+                            Capsule(style: .continuous)
+                                .fill(palette.textPrimary.opacity(0.09))
                         }
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background {
-                        Capsule(style: .continuous)
-                            .fill(palette.surfaceRaised.opacity(0.9))
-                    }
-                    .overlay {
-                        Capsule(style: .continuous)
-                            .strokeBorder(palette.hairline.opacity(0.7), lineWidth: 1)
-                    }
                 }
                 .buttonStyle(.plain)
             }
@@ -1613,17 +1721,10 @@ public struct DetailView: View {
     // MARK: Social tabs
 
     @ViewBuilder
-    private var commentsContent: some View {
-        if model.comments.isEmpty {
-            contentStatus(
-                systemImage: "text.bubble",
-                title: "暂无吐槽",
-                message: "这部作品还没有短评。"
-            )
-        } else {
-            LazyVStack(spacing: 12) {
+    private var commentList: some View {
+        LazyVStack(spacing: 0) {
                 ForEach(model.comments) { comment in
-                    glassCard {
+                    flatRow {
                         HStack(alignment: .top, spacing: 14) {
                             circularAvatar(url: comment.avatarURL, title: comment.authorName, size: 40)
                             VStack(alignment: .leading, spacing: 8) {
@@ -1659,7 +1760,6 @@ public struct DetailView: View {
                         }
                     }
                 }
-            }
         }
     }
 
@@ -1855,9 +1955,9 @@ public struct DetailView: View {
                 message: "还没有长评。"
             )
         } else {
-            LazyVStack(spacing: 12) {
+            LazyVStack(spacing: 0) {
                 ForEach(model.reviews) { review in
-                    glassCard {
+                    flatRow {
                         VStack(alignment: .leading, spacing: 12) {
                             HStack(alignment: .top, spacing: 12) {
                                 circularAvatar(url: review.avatarURL, title: review.authorName, size: 36)
@@ -1907,9 +2007,9 @@ public struct DetailView: View {
                 message: "还没有 staff 资料。"
             )
         } else {
-            LazyVStack(spacing: 10) {
+            LazyVStack(spacing: 0) {
                 ForEach(model.staff) { person in
-                    glassCard(padding: 14) {
+                    flatRow {
                         HStack(spacing: 14) {
                             squareAvatar(url: URL(string: person.images.best), title: person.name, size: 52)
                             VStack(alignment: .leading, spacing: 4) {
@@ -1947,6 +2047,7 @@ public struct DetailView: View {
 
     // MARK: Content chrome
 
+    /// 分区标题 + 内容直接落在背景上（无卡片、无描边），与首页分区一致。
     @ViewBuilder
     private func contentModule<Content: View>(
         eyebrow: String,
@@ -1954,35 +2055,25 @@ public struct DetailView: View {
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(eyebrow)
-                    .font(.caption.weight(.semibold))
-                    .tracking(1.2)
-                    .foregroundStyle(palette.textTertiary)
-                Text(title)
-                    .font(.title2.weight(.bold))
-                    .foregroundStyle(palette.textPrimary)
-            }
-            glassCard(content: content)
+            Text(title)
+                .font(.title3.weight(.bold))
+                .foregroundStyle(palette.textPrimary)
+            content()
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
+    /// 列表行：无卡片，靠细分隔线断行。
     @ViewBuilder
-    private func glassCard<Content: View>(
-        padding: CGFloat = 18,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        content()
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(padding)
-            .background {
-                RoundedRectangle(cornerRadius: DetailContentStyle.moduleRadius, style: .continuous)
-                    .fill(palette.surface.opacity(colorScheme == .dark ? 0.72 : 0.88))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: DetailContentStyle.moduleRadius, style: .continuous)
-                    .strokeBorder(palette.hairline, lineWidth: 1)
-            }
+    private func flatRow<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        VStack(spacing: 0) {
+            content()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 16)
+            Rectangle()
+                .fill(palette.hairline)
+                .frame(height: 1)
+        }
     }
 
     @ViewBuilder
@@ -1992,24 +2083,22 @@ public struct DetailView: View {
         message: String,
         @ViewBuilder accessory: () -> Accessory = { EmptyView() }
     ) -> some View {
-        glassCard {
-            VStack(spacing: 12) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 28, weight: .light))
-                    .foregroundStyle(palette.textTertiary)
-                    .symbolRenderingMode(.hierarchical)
-                Text(title)
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(palette.textPrimary)
-                Text(message)
-                    .font(.subheadline)
-                    .foregroundStyle(palette.textTertiary)
-                    .multilineTextAlignment(.center)
-                accessory()
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 20)
+        VStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.system(size: 28, weight: .light))
+                .foregroundStyle(palette.textTertiary)
+                .symbolRenderingMode(.hierarchical)
+            Text(title)
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(palette.textPrimary)
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(palette.textTertiary)
+                .multilineTextAlignment(.center)
+            accessory()
         }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 32)
     }
 
     @ViewBuilder
@@ -2069,10 +2158,37 @@ public struct DetailView: View {
     }
 }
 
+/// 详情页的纯格式化逻辑，独立出来方便测。
+enum DetailFormat {
+    /// 热度 / 收藏人数：过万折成「1.2万」，过千折成「9.9k」。
+    static func heat(_ value: Int) -> String {
+        if value >= 10000 {
+            return String(format: "%.1f万", Double(value) / 10000)
+        }
+        if value >= 1000 {
+            return String(format: "%.1fk", Double(value) / 1000)
+        }
+        return String(value)
+    }
+
+    /// 千分位，用于收藏分布这类需要精确数字的地方。
+    static func grouped(_ value: Int) -> String {
+        let digits = String(abs(value))
+        var out: [Character] = []
+        for (offset, char) in digits.reversed().enumerated() {
+            if offset > 0, offset % 3 == 0 { out.append(",") }
+            out.append(char)
+        }
+        return (value < 0 ? "-" : "") + String(out.reversed())
+    }
+}
+
 private enum DetailContentStyle {
     static let moduleRadius: CGFloat = 22
-    static let chipRadius: CGFloat = 14
+    static let chipRadius: CGFloat = 12
     static let episodeMin: CGFloat = 88
+    /// 标签云上限 —— Bangumi 有些条目挂了 40+ 个标签，全铺会占掉大半屏。
+    static let maxTagChips: Int = 18
     /// regular 宽度下角色宫格单卡最小 / 最大宽度（compact 固定 3 列，不走 adaptive）。
     static let characterMin: CGFloat = 110
     static let characterMax: CGFloat = 160

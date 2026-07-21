@@ -85,6 +85,9 @@ struct DetailViewModelTests {
 
     final class FakeBangumiAPI: BangumiAPIClientProtocol, @unchecked Sendable {
         var tagsBySubjectID: [Int: [BangumiTag]] = [:]
+        /// 设了就让 fetchSubject 原样返回它，用来测详情页字段补齐。
+        var subjectOverride: BangumiItem?
+        var fetchSubjectCallCount = 0
 
         func trending(limit: Int, offset: Int) async throws -> [BangumiItem] { [] }
         func search(tag: String, limit: Int, offset: Int) async throws -> [BangumiItem] { [] }
@@ -98,6 +101,8 @@ struct DetailViewModelTests {
         ) async throws -> [BangumiItem] { [] }
 
         func fetchSubject(subjectID: Int) async throws -> BangumiItem {
+            fetchSubjectCallCount += 1
+            if let subjectOverride { return subjectOverride }
             let tags = tagsBySubjectID[subjectID] ?? []
             return BangumiItem(
                 id: subjectID, name: "", nameCn: "", summary: "", airDate: "",
@@ -529,5 +534,181 @@ struct DetailViewModelTests {
             chapterRoads: "//ul",
             chapterResult: "//li/a"
         )
+    }
+}
+
+@Suite("DetailViewModel metadata")
+@MainActor
+struct DetailViewModelMetadataTests {
+
+    private func bareItem(id: Int = 1, heat: Int = 0) -> BangumiItem {
+        BangumiItem(
+            id: id, name: "ヤニねこ", nameCn: "尼古喵喵", summary: "", airDate: "",
+            rank: 0, ratingScore: 7.1, images: .empty, tags: [], heat: heat
+        )
+    }
+
+    private func makeModel(
+        item: BangumiItem,
+        api: DetailViewModelTests.FakeBangumiAPI
+    ) -> DetailViewModel {
+        DetailViewModel(item: item, rules: [], api: api)
+    }
+
+    /// trending 条目没有简介 / 标签 / infobox，进详情页必须靠 fetchSubject 补齐。
+    @Test("loading a trending item backfills summary, tags, infobox and collection")
+    func backfillsFromSubject() async {
+        let api = DetailViewModelTests.FakeBangumiAPI()
+        api.subjectOverride = BangumiItem(
+            id: 1, name: "ヤニねこ", nameCn: "尼古喵喵", summary: "完整简介",
+            airDate: "2026-07-02", rank: 1991, ratingScore: 7.1, images: .empty,
+            tags: [BangumiTag(name: "搞笑", count: 741)],
+            ratingTotal: 2242, eps: 0, platform: "TV",
+            metaTags: ["TV", "日本", "漫画改"],
+            totalEpisodes: 12,
+            collection: BangumiCollection(wish: 1498, collect: 281, doing: 10111, onHold: 89, dropped: 173),
+            infobox: [
+                BangumiInfoboxEntry(key: "放送星期", value: "星期四"),
+                BangumiInfoboxEntry(key: "导演", value: "木村拓"),
+            ]
+        )
+        let model = makeModel(item: bareItem(), api: api)
+        await model.load()
+
+        #expect(model.summary == "完整简介")
+        #expect(model.tags.first?.name == "搞笑")
+        #expect(model.metaTags == ["TV", "日本", "漫画改"])
+        #expect(model.airDate == "2026-07-02")
+        // eps 是 0，话数必须来自 total_episodes
+        #expect(model.episodeCount == 12)
+        #expect(model.collection?.doing == 10111)
+        #expect(model.ratingTotal == 2242)
+    }
+
+    /// 重复 load 不该反复打 subject 接口。
+    @Test("subject is fetched only once across repeated loads")
+    func fetchesSubjectOnce() async {
+        let api = DetailViewModelTests.FakeBangumiAPI()
+        let model = makeModel(item: bareItem(), api: api)
+        await model.load()
+        await model.load()
+        #expect(api.fetchSubjectCallCount == 1)
+    }
+
+    /// 接口失败时详情页要保留传进来的数据，不能被清空。
+    @Test("subject fetch failure keeps the seed item's own metadata")
+    func failureKeepsSeedData() async {
+        let api = FailingSubjectAPI()
+        let seed = BangumiItem(
+            id: 1, name: "N", nameCn: "名", summary: "种子简介", airDate: "2024-01-01",
+            rank: 0, ratingScore: 8.0, images: .empty,
+            tags: [BangumiTag(name: "奇幻", count: 5)], metaTags: ["TV"], totalEpisodes: 24
+        )
+        let model = DetailViewModel(item: seed, rules: [], api: api)
+        await model.load()
+        #expect(model.summary == "种子简介")
+        #expect(model.tags.first?.name == "奇幻")
+        #expect(model.metaTags == ["TV"])
+        #expect(model.episodeCount == 24)
+    }
+
+    /// 热度优先用 trending 榜单值，没有则回落到收藏总人数。
+    @Test("heat prefers trending count and falls back to collection total")
+    func heatFallback() async {
+        let api = DetailViewModelTests.FakeBangumiAPI()
+        let trendingModel = makeModel(item: bareItem(heat: 9986), api: api)
+        #expect(trendingModel.heat == 9986)
+        #expect(trendingModel.heatIsTrending)
+
+        api.subjectOverride = BangumiItem(
+            id: 2, name: "N", nameCn: "名", summary: "", airDate: "", rank: 0,
+            ratingScore: 0, images: .empty, tags: [],
+            collection: BangumiCollection(wish: 10, collect: 20, doing: 30)
+        )
+        let collectionModel = makeModel(item: bareItem(id: 2), api: api)
+        await collectionModel.load()
+        #expect(collectionModel.heat == 60)
+        #expect(!collectionModel.heatIsTrending)
+    }
+
+    /// 没有任何来源时热度为 0，UI 靠它决定不显示。
+    @Test("heat is zero when neither trending count nor collection exists")
+    func heatAbsent() {
+        let api = DetailViewModelTests.FakeBangumiAPI()
+        let model = makeModel(item: bareItem(), api: api)
+        #expect(model.heat == 0)
+        #expect(!model.heatIsTrending)
+    }
+
+    @Test("factRows renders known infobox keys in order and skips missing ones")
+    func factRowsOrdering() async {
+        let api = DetailViewModelTests.FakeBangumiAPI()
+        api.subjectOverride = BangumiItem(
+            id: 1, name: "N", nameCn: "名", summary: "", airDate: "2026-07-02",
+            rank: 0, ratingScore: 0, images: .empty, tags: [],
+            platform: "TV", episodeDuration: "24分",
+            totalEpisodes: 12,
+            infobox: [
+                BangumiInfoboxEntry(key: "放送星期", value: "星期四"),
+                BangumiInfoboxEntry(key: "导演", value: "木村拓"),
+                BangumiInfoboxEntry(key: "无关键", value: "忽略我"),
+            ]
+        )
+        let model = makeModel(item: bareItem(), api: api)
+        await model.load()
+
+        let labels = model.factRows.map(\.0)
+        #expect(labels.prefix(5) == ["放送开始", "放送星期", "话数", "片长", "类型"])
+        #expect(labels.contains("导演"))
+        // infobox 里没被列入白名单的 key 不该冒出来
+        #expect(!labels.contains("无关键"))
+        #expect(model.factRows.first(where: { $0.0 == "话数" })?.1 == "12 话")
+    }
+
+    @Test("factRows is empty when nothing is known about the subject")
+    func factRowsEmpty() {
+        let api = DetailViewModelTests.FakeBangumiAPI()
+        let model = makeModel(item: bareItem(), api: api)
+        #expect(model.factRows.isEmpty)
+    }
+
+    private final class FailingSubjectAPI: BangumiAPIClientProtocol, @unchecked Sendable {
+        struct Boom: Error {}
+        func trending(limit: Int, offset: Int) async throws -> [BangumiItem] { [] }
+        func search(tag: String, limit: Int, offset: Int) async throws -> [BangumiItem] { [] }
+        func search(
+            keyword: String, sort: BangumiSearchSort, filter: BangumiSearchFilter,
+            limit: Int, offset: Int
+        ) async throws -> [BangumiItem] { [] }
+        func fetchSubject(subjectID: Int) async throws -> BangumiItem { throw Boom() }
+        func fetchTags(subjectID: Int) async throws -> [BangumiTag] { [] }
+        func fetchCharacters(subjectID: Int) async throws -> [BangumiRelatedCharacter] { [] }
+        func fetchPersons(subjectID: Int) async throws -> [BangumiRelatedPerson] { [] }
+        func fetchComments(subjectID: Int) async throws -> [BangumiSubjectComment] { [] }
+        func fetchReviews(subjectID: Int) async throws -> [BangumiSubjectReview] { [] }
+    }
+}
+
+@Suite("DetailFormat")
+struct DetailFormatTests {
+
+    @Test("heat abbreviates thousands and ten-thousands")
+    func heatFormatting() {
+        #expect(DetailFormat.heat(0) == "0")
+        #expect(DetailFormat.heat(999) == "999")
+        #expect(DetailFormat.heat(1000) == "1.0k")
+        #expect(DetailFormat.heat(9986) == "10.0k")
+        #expect(DetailFormat.heat(10000) == "1.0万")
+        #expect(DetailFormat.heat(12152) == "1.2万")
+    }
+
+    @Test("grouped inserts thousand separators")
+    func groupedFormatting() {
+        #expect(DetailFormat.grouped(0) == "0")
+        #expect(DetailFormat.grouped(999) == "999")
+        #expect(DetailFormat.grouped(1000) == "1,000")
+        #expect(DetailFormat.grouped(10111) == "10,111")
+        #expect(DetailFormat.grouped(1234567) == "1,234,567")
+        #expect(DetailFormat.grouped(-4200) == "-4,200")
     }
 }
