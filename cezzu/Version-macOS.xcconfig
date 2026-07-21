@@ -1,4 +1,4 @@
 // Auto-generated from version.json — do not edit manually
 // Run scripts/sync_version.sh to regenerate
-MARKETING_VERSION = 0.1.2
-CURRENT_PROJECT_VERSION = 9
+MARKETING_VERSION = 0.1.3
+CURRENT_PROJECT_VERSION = 10
