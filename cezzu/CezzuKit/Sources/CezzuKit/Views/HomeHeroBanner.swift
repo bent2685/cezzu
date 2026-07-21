@@ -1,26 +1,32 @@
 import SwiftUI
 
 enum HomeHeroBannerLayout {
-    /// 占视口高度比例（2/5）。
-    static let viewportHeightRatio: CGFloat = 2.0 / 5.0
+    /// Banner 总高占视口高度比例（含状态栏区域）。
+    static let viewportHeightRatio: CGFloat = 0.56
+    /// 封面图占 banner 总高的比例，剩余部分是实心底色区。
+    static let imageHeightRatio: CGFloat = 0.8
     /// 极小窗口兜底。
-    static let minHeight: CGFloat = 260
+    static let minHeight: CGFloat = 360
     static let horizontalPadding: CGFloat = 20
     static let titleLineLimit: Int = 2
-    static let summaryLineLimit: Int = 3
-    static let maxTags: Int = 4
+    static let summaryLineLimit: Int = 4
+    static let maxTags: Int = 3
     static let pageDotSize: CGFloat = 6
     static let pageDotSpacing: CGFloat = 7
     static let swipeCommitRatio: CGFloat = 0.22
     static let swipeCommitDistance: CGFloat = 64
-    /// 渐变从高度的这个比例开始变实，底部完全实心接列表底色。
-    static let scrimStart: CGFloat = 0.32
+    /// 渐变从图片高度的这个比例开始出现，图片底边处完全实心。
+    static let scrimStart: CGFloat = 0.42
 
     static func contentHeight(viewportHeight: CGFloat) -> CGFloat {
         max(minHeight, viewportHeight * viewportHeightRatio)
     }
 
-    /// List 行高度 = 视口 2/5（topInset 只做文案避让）。
+    static func imageHeight(totalHeight: CGFloat) -> CGFloat {
+        totalHeight * imageHeightRatio
+    }
+
+    /// List 行高度 = 视口比例高（topInset 只做文案避让）。
     static func totalHeight(viewportHeight: CGFloat, topInset: CGFloat = 0) -> CGFloat {
         _ = topInset
         return contentHeight(viewportHeight: viewportHeight)
@@ -35,12 +41,13 @@ enum HomeHeroBannerLayout {
     }
 }
 
-/// 首页顶部沉浸式 Banner。
+/// 首页顶部沉浸式 Banner（竞品同款结构）。
 ///
 /// 层叠（由底到顶）：
-/// 1. 封面图（底层）
-/// 2. 透明 → 实心主色 scrim（盖住图下半，与页面底色同色，消除硬边）
-/// 3. 文案 + 轮播 indicator
+/// 1. 封面图（只占上部，底层）+ 整图轻染色
+/// 2. 图片底部「透明 → 实心主色」渐变，收口于图片底边
+/// 3. 图片下方剩余区域：实心主色（与页面底色同色，无硬边）
+/// 4. 文案（居中标题 / 评分行 / 简介）+ 轮播 indicator，锚定 banner 底部
 public struct HomeHeroBanner: View {
     let items: [BangumiItem]
     let activeIndex: Int
@@ -73,6 +80,10 @@ public struct HomeHeroBanner: View {
 
     private var totalHeight: CGFloat {
         HomeHeroBannerLayout.totalHeight(viewportHeight: viewportHeight, topInset: topInset)
+    }
+
+    private var imageHeight: CGFloat {
+        HomeHeroBannerLayout.imageHeight(totalHeight: totalHeight)
     }
 
     /// 页面 / scrim 收口用的实心色（与 HomeView 底色一致）。
@@ -162,40 +173,31 @@ public struct HomeHeroBanner: View {
             onTapItem(item)
         } label: {
             ZStack(alignment: .bottom) {
-                // ① 底层：封面
-                coverImage(for: item)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .clipped()
-
-                // ② 状态栏轻压暗
+                // ①② 底层：封面（只占上部）+ 渐变收口；下方剩余区域实心主色
                 VStack(spacing: 0) {
-                    LinearGradient(
-                        colors: [
-                            Color.black.opacity(0.4),
-                            Color.black.opacity(0.08),
-                            Color.clear,
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .frame(height: max(topInset + 28, 56))
-                    Spacer(minLength: 0)
+                    coverImage(for: item)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: imageHeight)
+                        .clipped()
+                        .overlay {
+                            // 整图轻染主色，和页面色调统一
+                            solidColor.opacity(0.14)
+                        }
+                        .overlay { imageScrim }
+                        .overlay(alignment: .top) { statusBarShade }
+                    solidColor
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
+                .animation(.easeInOut(duration: 0.65), value: palette)
 
-                // ③ 关键：透明 → 实心主色（盖在图上，底部与页面同色）
-                pageScrim
-                    .animation(.easeInOut(duration: 0.65), value: palette)
-
-                // ④ 顶层：文案 + indicator
-                VStack(alignment: .leading, spacing: 0) {
-                    Spacer(minLength: 0)
+                // ③ 顶层：文案 + indicator，锚定底部，上缘自然压在渐变区上
+                VStack(spacing: 10) {
                     metaBlock(for: item)
-                        .padding(.horizontal, HomeHeroBannerLayout.horizontalPadding)
                     pageDots
-                        .padding(.top, 12)
-                        .padding(.bottom, 14)
+                        .padding(.top, 2)
                 }
-                .padding(.top, topInset)
+                .padding(.horizontal, HomeHeroBannerLayout.horizontalPadding)
+                .padding(.bottom, 10)
             }
             .frame(maxWidth: .infinity)
             .frame(height: totalHeight)
@@ -205,20 +207,34 @@ public struct HomeHeroBanner: View {
         .allowsHitTesting(interactive)
     }
 
-    /// 透明 → 实心：竞品同款「背景盖在 banner 上」。
-    private var pageScrim: some View {
+    /// 图片底部「透明 → 实心」，收口于图片底边，与下方实心区无缝。
+    private var imageScrim: some View {
         LinearGradient(
             stops: [
                 .init(color: .clear, location: 0),
                 .init(color: .clear, location: HomeHeroBannerLayout.scrimStart),
-                .init(color: solidColor.opacity(0.25), location: 0.52),
-                .init(color: solidColor.opacity(0.62), location: 0.7),
-                .init(color: solidColor.opacity(0.9), location: 0.86),
+                .init(color: solidColor.opacity(0.28), location: 0.66),
+                .init(color: solidColor.opacity(0.62), location: 0.82),
+                .init(color: solidColor.opacity(0.9), location: 0.93),
                 .init(color: solidColor, location: 1.0),
             ],
             startPoint: .top,
             endPoint: .bottom
         )
+    }
+
+    /// 状态栏区域轻压暗，保证时钟可读。
+    private var statusBarShade: some View {
+        LinearGradient(
+            colors: [
+                Color.black.opacity(0.35),
+                Color.black.opacity(0.06),
+                Color.clear,
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .frame(height: max(topInset + 24, 52))
     }
 
     @ViewBuilder
@@ -246,48 +262,38 @@ public struct HomeHeroBanner: View {
 
     @ViewBuilder
     private func metaBlock(for item: BangumiItem) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(spacing: 8) {
             Text(item.displayName)
-                .font(.system(size: 30, weight: .bold, design: .rounded))
+                .font(.system(size: 32, weight: .heavy, design: .rounded))
                 .foregroundStyle(.white)
+                .multilineTextAlignment(.center)
                 .lineLimit(HomeHeroBannerLayout.titleLineLimit)
-                .shadow(color: .black.opacity(0.45), radius: 8, y: 2)
-                .minimumScaleFactor(0.72)
-
-            if !item.name.isEmpty, item.name != item.displayName {
-                Text(item.name)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.white.opacity(0.78))
-                    .lineLimit(1)
-            }
+                .minimumScaleFactor(0.7)
+                .shadow(color: .black.opacity(0.4), radius: 10, y: 2)
+                .frame(maxWidth: .infinity)
 
             metaFactsRow(for: item)
-
-            let tagNames = item.tags.prefix(HomeHeroBannerLayout.maxTags).map(\.name)
-            if !tagNames.isEmpty {
-                Text(tagNames.joined(separator: " · "))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.88))
-                    .lineLimit(1)
-            }
 
             if !item.summary.isEmpty {
                 Text(item.summary.trimmingCharacters(in: .whitespacesAndNewlines))
                     .font(.footnote)
-                    .foregroundStyle(.white.opacity(0.84))
+                    .foregroundStyle(.white.opacity(0.85))
                     .lineLimit(HomeHeroBannerLayout.summaryLineLimit)
-                    .lineSpacing(2)
-                    .padding(.top, 1)
+                    .lineSpacing(2.5)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 2)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity)
     }
 
+    /// 竞品同款居中一行：★评分 | 年份 | 标签,标签,标签
     @ViewBuilder
     private func metaFactsRow(for item: BangumiItem) -> some View {
-        let secondary = secondaryFactTexts(for: item)
-        if item.ratingScore > 0 || !secondary.isEmpty {
-            HStack(spacing: 6) {
+        let facts = factTexts(for: item)
+        if item.ratingScore > 0 || !facts.isEmpty {
+            HStack(spacing: 8) {
                 if item.ratingScore > 0 {
                     HStack(spacing: 3) {
                         Image(systemName: "star.fill")
@@ -296,35 +302,29 @@ public struct HomeHeroBanner: View {
                         Text(String(format: "%.1f", item.ratingScore))
                     }
                 }
-                ForEach(secondary, id: \.self) { text in
-                    Text("|")
-                        .foregroundStyle(.white.opacity(0.35))
+                ForEach(facts, id: \.self) { text in
+                    if item.ratingScore > 0 || text != facts.first {
+                        Text("|")
+                            .foregroundStyle(.white.opacity(0.35))
+                    }
                     Text(text)
-                        .foregroundStyle(.white.opacity(0.9))
                 }
             }
             .font(.subheadline.weight(.semibold))
-            .foregroundStyle(.white.opacity(0.94))
+            .foregroundStyle(.white.opacity(0.92))
             .lineLimit(1)
+            .frame(maxWidth: .infinity)
         }
     }
 
-    private func secondaryFactTexts(for item: BangumiItem) -> [String] {
+    private func factTexts(for item: BangumiItem) -> [String] {
         var texts: [String] = []
-        if item.ratingTotal > 0 {
-            texts.append("\(item.ratingTotal) 人评")
-        }
-        if item.rank > 0 {
-            texts.append("Rank #\(item.rank)")
-        }
         if let year = HomeHeroBannerLayout.yearString(from: item.airDate) {
             texts.append(year)
         }
-        if !item.platform.isEmpty {
-            texts.append(item.platform)
-        }
-        if item.eps > 0 {
-            texts.append("\(item.eps) 话")
+        let tagNames = item.tags.prefix(HomeHeroBannerLayout.maxTags).map(\.name)
+        if !tagNames.isEmpty {
+            texts.append(tagNames.joined(separator: ","))
         }
         return texts
     }

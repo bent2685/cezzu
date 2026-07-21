@@ -22,7 +22,7 @@ struct HomeHeroBannerLayoutTests {
 
     @Test("layout constants are positive")
     func layoutConstants() {
-        #expect(abs(HomeHeroBannerLayout.viewportHeightRatio - 0.4) < 0.0001)
+        #expect(abs(HomeHeroBannerLayout.viewportHeightRatio - 0.56) < 0.0001)
         #expect(HomeHeroBannerLayout.minHeight > 0)
         #expect(HomeHeroBannerLayout.maxTags >= 1)
         #expect(HomeHeroBannerLayout.summaryLineLimit >= 2)
@@ -30,11 +30,20 @@ struct HomeHeroBannerLayoutTests {
         #expect(HomeHeroBannerLayout.scrimStart < 0.6)
     }
 
-    @Test("contentHeight is about two fifths of viewport")
+    @Test("contentHeight follows viewport ratio")
     func contentHeightRatio() {
         let viewport: CGFloat = 800
         let content = HomeHeroBannerLayout.contentHeight(viewportHeight: viewport)
-        #expect(abs(content - viewport * 0.4) < 0.001)
+        #expect(abs(content - viewport * HomeHeroBannerLayout.viewportHeightRatio) < 0.001)
+    }
+
+    @Test("imageHeight is a fraction of total height, leaving a solid strip below")
+    func imageHeightFraction() {
+        let total: CGFloat = 480
+        let image = HomeHeroBannerLayout.imageHeight(totalHeight: total)
+        #expect(abs(image - total * HomeHeroBannerLayout.imageHeightRatio) < 0.001)
+        #expect(image < total)
+        #expect(image > total * 0.5)
     }
 
     @Test("contentHeight respects minimum")
