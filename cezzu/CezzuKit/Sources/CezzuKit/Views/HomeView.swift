@@ -38,20 +38,6 @@ public struct HomeView: View {
                     .ignoresSafeArea()
                     .animation(.easeInOut(duration: 0.65), value: palette)
 
-                // 顶部微光，随封面色呼吸
-                RadialGradient(
-                    colors: [
-                        palette.lifted.color.opacity(0.35),
-                        Color.clear,
-                    ],
-                    center: UnitPoint(x: 0.5, y: 0.0),
-                    startRadius: 0,
-                    endRadius: viewportHeight * 0.45
-                )
-                .ignoresSafeArea()
-                .allowsHitTesting(false)
-                .animation(.easeInOut(duration: 0.65), value: palette)
-
                 List {
                     if !model.bannerItems.isEmpty {
                         HomeHeroBanner(
