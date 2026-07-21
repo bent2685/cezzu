@@ -34,6 +34,39 @@ enum HomeHeroBannerLayout {
         return contentHeight(viewportHeight: viewportHeight)
     }
 
+    /// 热度数字：上千折成 `9.9k`，避免挤掉后面的标签。
+    static func heatText(_ heat: Int) -> String {
+        guard heat >= 1000 else { return String(heat) }
+        let thousands = Double(heat) / 1000
+        return String(format: "%.1fk", thousands)
+    }
+
+    /// 评分 / 热度之后的事实项：年份 + 官方分类标签（metaTags 缺失时回落到用户标签）。
+    static func factTexts(for item: BangumiItem) -> [String] {
+        var texts: [String] = []
+        if let year = yearString(from: item.airDate) ?? yearString(fromInfo: item.info) {
+            texts.append(year)
+        }
+        let categories = item.metaTags.isEmpty ? item.tags.map(\.name) : item.metaTags
+        texts.append(contentsOf: categories.prefix(maxTags))
+        return texts
+    }
+
+    /// 正文：优先完整简介；trending 不返回 summary，回落到它的 info 单行串。
+    static func detailText(for item: BangumiItem) -> String {
+        let summary = item.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !summary.isEmpty { return summary }
+        return item.info.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// 从 trending 的 info 串里捞年份，形如 `14话 / 2026年7月4日 / 导演`。
+    static func yearString(fromInfo info: String) -> String? {
+        guard let range = info.range(of: #"(19|20)\d{2}"#, options: .regularExpression) else {
+            return nil
+        }
+        return String(info[range])
+    }
+
     static func yearString(from airDate: String) -> String? {
         let trimmed = airDate.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= 4 else { return nil }
@@ -281,8 +314,9 @@ public struct HomeHeroBanner: View {
 
             metaFactsRow(for: item)
 
-            if !item.summary.isEmpty {
-                Text(item.summary.trimmingCharacters(in: .whitespacesAndNewlines))
+            let detail = HomeHeroBannerLayout.detailText(for: item)
+            if !detail.isEmpty {
+                Text(detail)
                     .font(.footnote)
                     .foregroundStyle(.white.opacity(0.85))
                     .lineLimit(HomeHeroBannerLayout.summaryLineLimit)
@@ -295,11 +329,11 @@ public struct HomeHeroBanner: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// 一行事实信息：★评分 | 年份 | 标签,标签,标签
+    /// 一行事实信息：★评分 · 🔥热度 · 年份 · 类型标签
     @ViewBuilder
     private func metaFactsRow(for item: BangumiItem) -> some View {
-        let facts = factTexts(for: item)
-        if item.ratingScore > 0 || !facts.isEmpty {
+        let facts = HomeHeroBannerLayout.factTexts(for: item)
+        if item.ratingScore > 0 || item.heat > 0 || !facts.isEmpty {
             HStack(spacing: 8) {
                 if item.ratingScore > 0 {
                     HStack(spacing: 3) {
@@ -309,11 +343,17 @@ public struct HomeHeroBanner: View {
                         Text(String(format: "%.1f", item.ratingScore))
                     }
                 }
-                ForEach(facts, id: \.self) { text in
-                    if item.ratingScore > 0 || text != facts.first {
-                        Text("|")
-                            .foregroundStyle(.white.opacity(0.35))
+                if item.heat > 0 {
+                    if item.ratingScore > 0 { factSeparator }
+                    HStack(spacing: 3) {
+                        Image(systemName: "flame.fill")
+                            .foregroundStyle(.orange)
+                            .font(.caption)
+                        Text(HomeHeroBannerLayout.heatText(item.heat))
                     }
+                }
+                ForEach(facts, id: \.self) { text in
+                    factSeparator
                     Text(text)
                 }
             }
@@ -324,16 +364,9 @@ public struct HomeHeroBanner: View {
         }
     }
 
-    private func factTexts(for item: BangumiItem) -> [String] {
-        var texts: [String] = []
-        if let year = HomeHeroBannerLayout.yearString(from: item.airDate) {
-            texts.append(year)
-        }
-        let tagNames = item.tags.prefix(HomeHeroBannerLayout.maxTags).map(\.name)
-        if !tagNames.isEmpty {
-            texts.append(tagNames.joined(separator: ","))
-        }
-        return texts
+    private var factSeparator: some View {
+        Text("·")
+            .foregroundStyle(.white.opacity(0.4))
     }
 
     // MARK: - indicator
