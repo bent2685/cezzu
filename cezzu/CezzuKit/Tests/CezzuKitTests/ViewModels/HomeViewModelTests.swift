@@ -7,28 +7,31 @@ import Testing
 struct HomeViewModelTests {
 
     /// 一个内存版 Bangumi client，给 view model 单测用。
+    /// 计数器用锁保护：`HomeViewModel.reload` 会并发打多个分区。
     final class FakeBangumiAPI: BangumiAPIClientProtocol, @unchecked Sendable {
+        private let lock = NSLock()
         var trendingResult: Result<[BangumiItem], BangumiAPIError> = .success([])
         var searchResult: Result<[BangumiItem], BangumiAPIError> = .success([])
         var keywordSearchResult: Result<[BangumiItem], BangumiAPIError> = .success([])
+        /// 按 tag 覆盖 search 返回；未命中时回落到 `searchResult`。
+        var searchResultsByTag: [String: Result<[BangumiItem], BangumiAPIError>] = [:]
         private(set) var trendingCalls: Int = 0
+        private(set) var trendingLimits: [Int] = []
         private(set) var searchCalls: [String] = []
         private(set) var searchOffsets: [Int] = []
+        private(set) var searchLimits: [Int] = []
         private(set) var keywordSearchCalls: [(String, BangumiSearchSort, Int)] = []
         private(set) var keywordSearchFilters: [BangumiSearchFilter] = []
 
         func trending(limit: Int, offset: Int) async throws -> [BangumiItem] {
-            trendingCalls += 1
-            switch trendingResult {
+            switch recordTrending(limit: limit) {
             case .success(let items): return items
             case .failure(let error): throw error
             }
         }
 
         func search(tag: String, limit: Int, offset: Int) async throws -> [BangumiItem] {
-            searchCalls.append(tag)
-            searchOffsets.append(offset)
-            switch searchResult {
+            switch recordSearch(tag: tag, limit: limit, offset: offset) {
             case .success(let items): return items
             case .failure(let error): throw error
             }
@@ -41,12 +44,44 @@ struct HomeViewModelTests {
             limit: Int,
             offset: Int
         ) async throws -> [BangumiItem] {
-            keywordSearchCalls.append((keyword, sort, offset))
-            keywordSearchFilters.append(filter)
-            switch keywordSearchResult {
+            switch recordKeywordSearch(keyword: keyword, sort: sort, filter: filter, offset: offset) {
             case .success(let items): return items
             case .failure(let error): throw error
             }
+        }
+
+        private func recordTrending(limit: Int) -> Result<[BangumiItem], BangumiAPIError> {
+            lock.lock()
+            defer { lock.unlock() }
+            trendingCalls += 1
+            trendingLimits.append(limit)
+            return trendingResult
+        }
+
+        private func recordSearch(
+            tag: String,
+            limit: Int,
+            offset: Int
+        ) -> Result<[BangumiItem], BangumiAPIError> {
+            lock.lock()
+            defer { lock.unlock() }
+            searchCalls.append(tag)
+            searchOffsets.append(offset)
+            searchLimits.append(limit)
+            return searchResultsByTag[tag] ?? searchResult
+        }
+
+        private func recordKeywordSearch(
+            keyword: String,
+            sort: BangumiSearchSort,
+            filter: BangumiSearchFilter,
+            offset: Int
+        ) -> Result<[BangumiItem], BangumiAPIError> {
+            lock.lock()
+            defer { lock.unlock() }
+            keywordSearchCalls.append((keyword, sort, offset))
+            keywordSearchFilters.append(filter)
+            return keywordSearchResult
         }
 
         func fetchSubject(subjectID: Int) async throws -> BangumiItem {
@@ -62,7 +97,7 @@ struct HomeViewModelTests {
         func fetchReviews(subjectID: Int) async throws -> [BangumiSubjectReview] { [] }
     }
 
-    private static func makeItem(id: Int, name: String) -> BangumiItem {
+    static func makeItem(id: Int, name: String) -> BangumiItem {
         BangumiItem(
             id: id, name: name, nameCn: name,
             summary: "", airDate: "", rank: 0, ratingScore: 0,
@@ -70,106 +105,15 @@ struct HomeViewModelTests {
         )
     }
 
-    @Test("loadInitialIfNeeded fetches trending on first call")
-    func loadInitialFetchesTrending() async {
-        let api = FakeBangumiAPI()
-        api.trendingResult = .success([Self.makeItem(id: 1, name: "A"), Self.makeItem(id: 2, name: "B")])
-        let vm = HomeViewModel(api: api)
-
-        await vm.loadInitialIfNeeded()
-        // 等任务完成
-        await vm.waitForIdle()
-
-        #expect(api.trendingCalls == 1)
-        #expect(vm.items.count == 2)
-        #expect(vm.items[0].id == 1)
-        #expect(vm.isLoading == false)
-        #expect(vm.loadFailed == false)
-    }
-
-    @Test("loadInitialIfNeeded skips when items already loaded")
-    func loadInitialSkipsWhenLoaded() async {
-        let api = FakeBangumiAPI()
-        api.trendingResult = .success([Self.makeItem(id: 1, name: "A")])
-        let vm = HomeViewModel(api: api)
-
-        await vm.loadInitialIfNeeded()
-        await vm.waitForIdle()
-        await vm.loadInitialIfNeeded()
-        await vm.waitForIdle()
-
-        #expect(api.trendingCalls == 1)
-    }
-
-    @Test("selectTag triggers search and clears items")
-    func selectTagTriggersSearch() async {
-        let api = FakeBangumiAPI()
-        api.trendingResult = .success([Self.makeItem(id: 1, name: "T1")])
-        api.searchResult = .success([
-            Self.makeItem(id: 100, name: "K1"),
-            Self.makeItem(id: 101, name: "K2"),
-            Self.makeItem(id: 102, name: "K3"),
-        ])
-        let vm = HomeViewModel(api: api)
-
-        await vm.loadInitialIfNeeded()
-        await vm.waitForIdle()
-        #expect(vm.items.count == 1)
-
-        await vm.selectTag("治愈")
-        await vm.waitForIdle()
-        #expect(api.searchCalls == ["治愈"])
-        #expect(vm.items.count == 3)
-        #expect(vm.currentTag == "治愈")
-    }
-
-    @Test("selectTag empty switches back to trending")
-    func selectEmptyTagBackToTrending() async {
-        let api = FakeBangumiAPI()
-        api.trendingResult = .success([Self.makeItem(id: 1, name: "A")])
-        api.searchResult = .success([Self.makeItem(id: 99, name: "X")])
-        let vm = HomeViewModel(api: api)
-
-        await vm.loadInitialIfNeeded()
-        await vm.waitForIdle()
-        await vm.selectTag("校园")
-        await vm.waitForIdle()
-        #expect(vm.items[0].id == 99)
-
-        await vm.selectTag("")
-        await vm.waitForIdle()
-        #expect(vm.items[0].id == 1)
-        #expect(vm.currentTag == "")
-        #expect(api.trendingCalls == 2)
-    }
-
-    @Test("selectTag with same tag is a no-op")
-    func selectSameTagNoop() async {
-        let api = FakeBangumiAPI()
-        api.searchResult = .success([Self.makeItem(id: 1, name: "X")])
-        let vm = HomeViewModel(api: api)
-
-        await vm.selectTag("治愈")
-        await vm.waitForIdle()
-        await vm.selectTag("治愈")
-        await vm.waitForIdle()
-
-        #expect(api.searchCalls == ["治愈"])
-    }
-
-    @Test("API failure sets loadFailed and clears items")
-    func failureSetsErrorState() async {
-        let api = FakeBangumiAPI()
-        api.trendingResult = .failure(.http(status: 500))
-        let vm = HomeViewModel(api: api)
-
-        await vm.loadInitialIfNeeded()
-        await vm.waitForIdle()
-
-        #expect(vm.loadFailed == true)
-        #expect(vm.items.isEmpty)
-        #expect(vm.lastError == .http(status: 500))
-        #expect(vm.isLoading == false)
+    @Test("homeSections is trending plus all available tags")
+    func homeSectionsComposition() {
+        let sections = HomeViewModel.homeSections
+        #expect(sections.count == 1 + HomeViewModel.availableTags.count)
+        #expect(sections.first == HomeSection.trending)
+        #expect(sections.first?.tag == "")
+        #expect(sections[1].title == "日常")
+        #expect(sections[1].tag == "日常")
+        #expect(sections.last?.tag == "异世界")
     }
 
     @Test("availableTags is the Kazumi-compat 15-tag list")
@@ -180,55 +124,209 @@ struct HomeViewModelTests {
         #expect(HomeViewModel.availableTags.contains("异世界"))
     }
 
-    @Test("loadMoreIfNeeded appends next page when reaching the last item")
-    func loadMoreAppendsNextPage() async {
+    @Test("init builds section skeleton and hydrates banner cache without network")
+    func initBuildsSkeletonWithoutNetwork() {
         let api = FakeBangumiAPI()
-        api.trendingResult = .success((1...24).map { Self.makeItem(id: $0, name: "Item \($0)") })
+        let vm = HomeViewModel(api: api)
+
+        #expect(vm.sections.count == HomeViewModel.homeSections.count)
+        #expect(vm.sections.allSatisfy { $0.items.isEmpty && !$0.hasLoaded && !$0.isLoading })
+        #expect(api.trendingCalls == 0)
+        #expect(api.searchCalls.isEmpty)
+    }
+
+    @Test("loadInitialIfNeeded prioritizes trending fetch")
+    func loadInitialFetchesTrending() async {
+        let api = FakeBangumiAPI()
+        api.trendingResult = .success([Self.makeItem(id: 1, name: "A"), Self.makeItem(id: 2, name: "B")])
         let vm = HomeViewModel(api: api)
 
         await vm.loadInitialIfNeeded()
-        await vm.waitForIdle()
 
-        api.trendingResult = .success((25...30).map { Self.makeItem(id: $0, name: "Item \($0)") })
-        await vm.loadMoreIfNeeded(currentItem: vm.items[23])
-
-        #expect(vm.items.count == 30)
-        #expect(vm.items.last?.id == 30)
-        #expect(vm.isLoadingMore == false)
-        #expect(vm.hasMore == false)
-        #expect(api.trendingCalls == 2)
+        #expect(api.trendingCalls == 1)
+        #expect(api.searchCalls.isEmpty)
+        let trending = vm.sections.first { $0.id == HomeSection.trending.id }
+        #expect(trending?.items.map(\.id) == [1, 2])
+        #expect(vm.bannerItems.map(\.id) == [1, 2])
     }
 
-    @Test("loadMoreIfNeeded appends tagged page after API-capped first page")
-    func loadMoreAppendsTaggedPage() async {
+    @Test("loadSectionIfNeeded fetches trending for empty tag")
+    func loadTrendingSection() async {
         let api = FakeBangumiAPI()
-        api.searchResult = .success((1...20).map { Self.makeItem(id: $0, name: "Item \($0)") })
+        api.trendingResult = .success([Self.makeItem(id: 1, name: "A"), Self.makeItem(id: 2, name: "B")])
+        let vm = HomeViewModel(api: api)
+        await vm.loadInitialIfNeeded()
+
+        await vm.loadSectionIfNeeded(HomeSection.trending.id)
+
+        let section = vm.sections.first { $0.id == HomeSection.trending.id }
+        #expect(api.trendingCalls == 1)
+        #expect(api.trendingLimits == [HomeViewModel.previewPageSize])
+        #expect(section?.items.count == 2)
+        #expect(section?.hasLoaded == true)
+        #expect(section?.isLoading == false)
+        #expect(section?.loadFailed == false)
+        #expect(vm.hasLoadedAny == true)
+    }
+
+    @Test("loadSectionIfNeeded fetches tag search with preview page size")
+    func loadTaggedSection() async {
+        let api = FakeBangumiAPI()
+        api.searchResult = .success([
+            Self.makeItem(id: 10, name: "K1"),
+            Self.makeItem(id: 11, name: "K2"),
+        ])
+        let vm = HomeViewModel(api: api)
+        await vm.loadInitialIfNeeded()
+
+        await vm.loadSectionIfNeeded("治愈")
+
+        #expect(api.searchCalls == ["治愈"])
+        #expect(api.searchLimits == [HomeViewModel.previewPageSize])
+        #expect(api.searchOffsets == [0])
+        let section = vm.sections.first { $0.id == "治愈" }
+        #expect(section?.items.map(\.id) == [10, 11])
+        #expect(section?.hasLoaded == true)
+    }
+
+    @Test("loadSectionIfNeeded is a no-op when already loaded")
+    func loadSectionSkipsWhenLoaded() async {
+        let api = FakeBangumiAPI()
+        api.trendingResult = .success([Self.makeItem(id: 1, name: "A")])
         let vm = HomeViewModel(api: api)
 
-        await vm.selectTag("日常")
-        await vm.waitForIdle()
+        await vm.loadSectionIfNeeded(HomeSection.trending.id)
+        await vm.loadSectionIfNeeded(HomeSection.trending.id)
 
-        api.searchResult = .success((21...25).map { Self.makeItem(id: $0, name: "Item \($0)") })
-        await vm.loadMoreIfNeeded(currentItem: vm.items[19])
-
-        #expect(vm.items.count == 25)
-        #expect(vm.items.last?.id == 25)
-        #expect(vm.hasMore == false)
-        #expect(api.searchCalls == ["日常", "日常"])
-        #expect(api.searchOffsets == [0, 20])
+        #expect(api.trendingCalls == 1)
     }
-}
 
-// MARK: - Test helpers
+    @Test("section failure sets loadFailed without poisoning other sections")
+    func sectionFailureIsolated() async {
+        let api = FakeBangumiAPI()
+        api.trendingResult = .failure(.http(status: 500))
+        api.searchResultsByTag["日常"] = .success([Self.makeItem(id: 9, name: "D")])
+        let vm = HomeViewModel(api: api)
 
-@MainActor
-extension HomeViewModel {
-    /// 等当前 in-flight task 完成 —— 给测试用，避免 sleep。
-    func waitForIdle() async {
-        while isLoading {
-            await Task.yield()
-        }
-        // 再让一次出让，确保 @MainActor 上的状态写入完成
-        await Task.yield()
+        await vm.loadSectionIfNeeded(HomeSection.trending.id)
+        await vm.loadSectionIfNeeded("日常")
+
+        let trending = vm.sections.first { $0.id == HomeSection.trending.id }
+        let daily = vm.sections.first { $0.id == "日常" }
+        #expect(trending?.loadFailed == true)
+        #expect(trending?.items.isEmpty == true)
+        #expect(trending?.hasLoaded == true)
+        #expect(daily?.items.map(\.id) == [9])
+        #expect(daily?.loadFailed == false)
+    }
+
+    @Test("retrySection force-reloads a failed section")
+    func retrySectionReloads() async {
+        let api = FakeBangumiAPI()
+        api.trendingResult = .failure(.http(status: 500))
+        let vm = HomeViewModel(api: api)
+
+        await vm.loadSectionIfNeeded(HomeSection.trending.id)
+        #expect(vm.sections.first?.loadFailed == true)
+
+        api.trendingResult = .success([Self.makeItem(id: 3, name: "OK")])
+        await vm.retrySection(HomeSection.trending.id)
+
+        #expect(api.trendingCalls == 2)
+        #expect(vm.sections.first?.items.map(\.id) == [3])
+        #expect(vm.sections.first?.loadFailed == false)
+    }
+
+    @Test("reload rebuilds all sections and fetches them")
+    func reloadFetchesAll() async {
+        let api = FakeBangumiAPI()
+        api.trendingResult = .success([Self.makeItem(id: 1, name: "T")])
+        api.searchResult = .success([Self.makeItem(id: 2, name: "S")])
+        let vm = HomeViewModel(api: api)
+
+        await vm.reload()
+
+        #expect(api.trendingCalls == 1)
+        #expect(api.searchCalls.count == HomeViewModel.availableTags.count)
+        #expect(vm.sections.allSatisfy { $0.hasLoaded })
+        #expect(vm.sections.first?.items.map(\.id) == [1])
+        #expect(vm.hasLoadedAny == true)
+    }
+
+    @Test("previewPageSize is 20")
+    func previewPageSizeIs20() {
+        #expect(HomeViewModel.previewPageSize == 20)
+    }
+
+    @Test("init hydrates banner from disk cache without network")
+    func initHydratesBannerCache() {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("cezzu-vm-banner-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = HomeBannerStore(fileURL: url)
+        let cached = (1...5).map { Self.makeItem(id: $0, name: "C\($0)") }
+        #expect(store.updateIfNeeded(from: cached) == true)
+
+        let api = FakeBangumiAPI()
+        let vm = HomeViewModel(api: api, bannerStore: store)
+
+        #expect(vm.bannerItems.map(\.id) == [1, 2, 3, 4, 5])
+        #expect(api.trendingCalls == 0)
+    }
+
+    @Test("trending success updates banner when top five ids change")
+    func trendingUpdatesBannerOnIDChange() async {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("cezzu-vm-banner-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = HomeBannerStore(fileURL: url)
+        #expect(store.updateIfNeeded(from: (1...5).map { Self.makeItem(id: $0, name: "O\($0)") }) == true)
+
+        let api = FakeBangumiAPI()
+        api.trendingResult = .success((10...20).map { Self.makeItem(id: $0, name: "T\($0)") })
+        let vm = HomeViewModel(api: api, bannerStore: store)
+        // init 先用缓存
+        #expect(vm.bannerItems.map(\.id) == [1, 2, 3, 4, 5])
+
+        // loadInitial 优先拉热门，id 变了就换 Banner
+        await vm.loadInitialIfNeeded()
+
+        #expect(vm.bannerItems.map(\.id) == [10, 11, 12, 13, 14])
+        #expect(store.load().map(\.id) == [10, 11, 12, 13, 14])
+    }
+
+    @Test("trending success with same top five ids keeps cached banner")
+    func trendingSameIDsKeepsCache() async {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("cezzu-vm-banner-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = HomeBannerStore(fileURL: url)
+        let old = (1...5).map { Self.makeItem(id: $0, name: "old\($0)") }
+        #expect(store.updateIfNeeded(from: old) == true)
+
+        let api = FakeBangumiAPI()
+        api.trendingResult = .success((1...5).map { Self.makeItem(id: $0, name: "new\($0)") })
+        let vm = HomeViewModel(api: api, bannerStore: store)
+        await vm.loadInitialIfNeeded()
+        await vm.loadSectionIfNeeded(HomeSection.trending.id)
+
+        #expect(vm.bannerItems.map(\.id) == [1, 2, 3, 4, 5])
+        #expect(vm.bannerItems.first?.displayName == "old1")
+    }
+
+    @Test("setActiveBannerIndex clamps to range")
+    func setActiveBannerIndexClamps() async {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("cezzu-vm-banner-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = HomeBannerStore(fileURL: url)
+        #expect(store.updateIfNeeded(from: (1...3).map { Self.makeItem(id: $0, name: "B\($0)") }) == true)
+
+        let vm = HomeViewModel(api: FakeBangumiAPI(), bannerStore: store)
+        await vm.loadInitialIfNeeded()
+        vm.setActiveBannerIndex(99)
+        #expect(vm.activeBannerIndex == 2)
+        vm.setActiveBannerIndex(-3)
+        #expect(vm.activeBannerIndex == 0)
     }
 }

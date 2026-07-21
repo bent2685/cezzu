@@ -325,10 +325,16 @@ struct CompactRootView: View {
         NavigationStack(path: $path) {
             HomeView(
                 model: homeModel,
+                history: session.history,
                 onTapItem: { item in
                     path.append(Route.detail(item))
                 },
-                onTapSearch: openSearch
+                onTapSection: { section in
+                    path.append(Route.tagSection(tag: section.tag))
+                },
+                onTapHistoryEntry: { entry in
+                    path.append(Route.historyDetail(historyHint(from: entry)))
+                }
             )
             .navigationDestination(for: Route.self) { route in
                 routeView(route)
@@ -366,17 +372,20 @@ struct CompactRootView: View {
 
     private var searchStack: some View {
         NavigationStack(path: $path) {
-            SearchView(model: searchModel) { item in
-                path.append(Route.detail(item))
-            }
+            SearchView(
+                model: searchModel,
+                browseModel: homeModel,
+                onTapItem: { item in
+                    path.append(Route.detail(item))
+                },
+                onTapSection: { section in
+                    path.append(Route.tagSection(tag: section.tag))
+                }
+            )
             .navigationDestination(for: Route.self) { route in
                 routeView(route)
             }
         }
-    }
-
-    private func openSearch() {
-        selectedTab = .search
     }
 
     @ViewBuilder
@@ -385,13 +394,26 @@ struct CompactRootView: View {
         case .home:
             HomeView(
                 model: homeModel,
+                history: session.history,
                 onTapItem: { item in path.append(Route.detail(item)) },
-                onTapSearch: openSearch
+                onTapSection: { section in path.append(Route.tagSection(tag: section.tag)) },
+                onTapHistoryEntry: { entry in
+                    path.append(Route.historyDetail(historyHint(from: entry)))
+                }
             )
         case .search:
-            SearchView(model: searchModel) { item in
-                path.append(Route.detail(item))
-            }
+            SearchView(
+                model: searchModel,
+                browseModel: homeModel,
+                onTapItem: { item in path.append(Route.detail(item)) },
+                onTapSection: { section in path.append(Route.tagSection(tag: section.tag)) }
+            )
+        case .tagSection(let tag):
+            TagSectionView(
+                api: session.bangumiAPI,
+                tag: tag,
+                onTapItem: { item in path.append(Route.detail(item)) }
+            )
         case .detail(let item):
             let historyEntry = try? session.history.entry(forBangumiItem: item)
             DetailView(
@@ -656,8 +678,12 @@ struct SplitRootView: View {
         case .home:
             HomeView(
                 model: homeModel,
+                history: session.history,
                 onTapItem: { item in path.append(Route.detail(item)) },
-                onTapSearch: { path.append(Route.search) }
+                onTapSection: { section in path.append(Route.tagSection(tag: section.tag)) },
+                onTapHistoryEntry: { entry in
+                    path.append(Route.historyDetail(historyHint(from: entry)))
+                }
             )
         case .follow:
             FollowView(followStore: session.followStore) { item in
@@ -678,13 +704,26 @@ struct SplitRootView: View {
         case .home:
             HomeView(
                 model: homeModel,
+                history: session.history,
                 onTapItem: { item in path.append(Route.detail(item)) },
-                onTapSearch: { path.append(Route.search) }
+                onTapSection: { section in path.append(Route.tagSection(tag: section.tag)) },
+                onTapHistoryEntry: { entry in
+                    path.append(Route.historyDetail(historyHint(from: entry)))
+                }
             )
         case .search:
-            SearchView(model: searchModel) { item in
-                path.append(Route.detail(item))
-            }
+            SearchView(
+                model: searchModel,
+                browseModel: homeModel,
+                onTapItem: { item in path.append(Route.detail(item)) },
+                onTapSection: { section in path.append(Route.tagSection(tag: section.tag)) }
+            )
+        case .tagSection(let tag):
+            TagSectionView(
+                api: session.bangumiAPI,
+                tag: tag,
+                onTapItem: { item in path.append(Route.detail(item)) }
+            )
         case .detail(let item):
             let historyEntry = try? session.history.entry(forBangumiItem: item)
             DetailView(

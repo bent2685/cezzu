@@ -56,6 +56,8 @@ public enum Route: Hashable, Sendable {
     case search
     case detail(BangumiItem)
     case historyDetail(HistoryResumeHint)
+    /// 首页分区「查看全部」；`tag` 为空表示热门番组。
+    case tagSection(tag: String)
     case episodes(detail: AnimeDetail)
     case player(PlaybackRequest)
     case ruleManager

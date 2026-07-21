@@ -2,151 +2,122 @@ import SwiftUI
 
 /// 主页 —— Bangumi.tv 番剧浏览。
 ///
-/// 跟 Kazumi PopularPage 等价：顶部一个 tag 标题（默认「热门番组」），点击展开
-/// dropdown 切 tag；下面是响应式宫格的 BangumiCard。
+/// 层叠：全页实心主色底 → Banner 图（顶区）→ List（透明底）盖在上面。
+/// Banner 内自带「透明→实心」scrim，底部与页面实心色对齐，滚动无硬边。
 public struct HomeView: View {
     @Bindable var model: HomeViewModel
+    @Bindable var history: HistoryStore
     var onTapItem: (BangumiItem) -> Void
-    var onTapSearch: () -> Void
-
-    @State private var showTagPicker: Bool = false
+    var onTapSection: (HomeSection) -> Void
+    var onTapHistoryEntry: (WatchHistoryEntry) -> Void
 
     public init(
         model: HomeViewModel,
+        history: HistoryStore,
         onTapItem: @escaping (BangumiItem) -> Void,
-        onTapSearch: @escaping () -> Void
+        onTapSection: @escaping (HomeSection) -> Void,
+        onTapHistoryEntry: @escaping (WatchHistoryEntry) -> Void
     ) {
         self.model = model
+        self.history = history
         self.onTapItem = onTapItem
-        self.onTapSearch = onTapSearch
+        self.onTapSection = onTapSection
+        self.onTapHistoryEntry = onTapHistoryEntry
     }
 
     public var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 16) {
-                header
-                if model.isLoading && model.items.isEmpty {
-                    BangumiSkeletonGrid()
-                } else if model.loadFailed {
-                    EmptyStateView(
-                        systemImage: "wifi.exclamationmark",
-                        title: "加载失败",
-                        message: model.lastError?.userMessage ?? "请检查网络后重试。",
-                        tone: .warning,
-                        actionTitle: "重试",
-                        action: { Task { await model.reload() } }
-                    )
-                    .padding(.top, 20)
-                } else if model.items.isEmpty {
-                    EmptyStateView(
-                        systemImage: "sparkles",
-                        title: "暂无番剧",
-                        message: "换个标签看看，或下拉重试。"
-                    )
-                    .padding(.top, 20)
-                } else {
-                    grid
+        GeometryReader { geo in
+            let topInset = geo.safeAreaInsets.top
+            let viewportHeight = geo.size.height + geo.safeAreaInsets.top + geo.safeAreaInsets.bottom
+            let palette = model.activeBannerPalette
+            let solid = palette.darkened.color
+
+            ZStack {
+                // 全页实心底色（与 Banner scrim 收口同色）
+                solid
+                    .ignoresSafeArea()
+                    .animation(.easeInOut(duration: 0.65), value: palette)
+
+                // 顶部微光，随封面色呼吸
+                RadialGradient(
+                    colors: [
+                        palette.lifted.color.opacity(0.35),
+                        Color.clear,
+                    ],
+                    center: UnitPoint(x: 0.5, y: 0.0),
+                    startRadius: 0,
+                    endRadius: viewportHeight * 0.45
+                )
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+                .animation(.easeInOut(duration: 0.65), value: palette)
+
+                List {
+                    if !model.bannerItems.isEmpty {
+                        HomeHeroBanner(
+                            items: model.bannerItems,
+                            activeIndex: model.activeBannerIndex,
+                            palette: model.activeBannerPalette,
+                            viewportHeight: viewportHeight,
+                            topInset: topInset,
+                            onChangeIndex: { model.setActiveBannerIndex($0) },
+                            onTapItem: onTapItem
+                        )
+                        .listRowInsets(EdgeInsets(
+                            top: -topInset,
+                            leading: 0,
+                            bottom: 0,
+                            trailing: 0
+                        ))
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                    }
+
+                    if !history.continueWatching.isEmpty {
+                        ContinueWatchingSection(
+                            entries: history.continueWatching,
+                            onTapEntry: onTapHistoryEntry
+                        )
+                        .listRowInsets(EdgeInsets(top: 8, leading: 20, bottom: 12, trailing: 20))
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                    }
+
+                    ForEach(model.sections) { content in
+                        BangumiSectionRow(
+                            content: content,
+                            onTapItem: onTapItem,
+                            onTapSeeAll: { onTapSection(content.section) },
+                            onRetry: {
+                                Task { await model.retrySection(content.id) }
+                            }
+                        )
+                        .listRowInsets(EdgeInsets(top: 12, leading: 20, bottom: 12, trailing: 20))
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                        .task(id: content.id) {
+                            await model.loadSectionIfNeeded(content.id)
+                        }
+                    }
                 }
-            }
-            .padding(20)
-        }
-        .task { await model.loadInitialIfNeeded() }
-        .navigationTitle("主页")
-        .toolbar { toolbarContent }
-    }
-
-    // MARK: - header (tag selector)
-
-    @ViewBuilder
-    private var header: some View {
-        HStack(spacing: 8) {
-            Button {
-                showTagPicker = true
-            } label: {
-                HStack(spacing: 6) {
-                    Text(model.currentTag.isEmpty ? "热门番组" : model.currentTag)
-                        .font(.largeTitle.bold())
-                        .foregroundStyle(.primary)
-                    Image(systemName: "chevron.down")
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .buttonStyle(.plain)
-            .popover(isPresented: $showTagPicker, arrowEdge: .top) {
-                tagPickerContent
-            }
-            Spacer()
-        }
-        .padding(.bottom, 4)
-    }
-
-    @ViewBuilder
-    private var tagPickerContent: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                tagRow(label: "热门番组", value: "")
-                Divider()
-                ForEach(HomeViewModel.availableTags, id: \.self) { tag in
-                    tagRow(label: tag, value: tag)
-                }
-            }
-            .padding(.vertical, 6)
-        }
-        .frame(minWidth: 180, idealWidth: 200, maxWidth: 240, minHeight: 200, idealHeight: 360, maxHeight: 480)
-    }
-
-    @ViewBuilder
-    private func tagRow(label: String, value: String) -> some View {
-        Button {
-            showTagPicker = false
-            Task { await model.selectTag(value) }
-        } label: {
-            HStack {
-                Text(label)
-                    .foregroundStyle(.primary)
-                Spacer()
-                if model.currentTag == value {
-                    Image(systemName: "checkmark")
-                        .foregroundStyle(.tint)
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-
-    // MARK: - grid
-
-    @ViewBuilder
-    private var grid: some View {
-        BangumiGrid(
-            items: model.items,
-            onTapItem: onTapItem,
-            onLoadMore: { item in
-                await model.loadMoreIfNeeded(currentItem: item)
-            }
-        ) {
-            if model.isLoadingMore {
-                BangumiSkeletonGrid(placeholderCount: 4)
-                    .padding(.top, 4)
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .scrollIndicators(.hidden)
+                .contentMargins(.top, 0, for: .scrollContent)
             }
         }
-    }
-
-    // MARK: - toolbar
-
-    @ToolbarContentBuilder
-    private var toolbarContent: some ToolbarContent {
-        ToolbarItem(placement: .primaryAction) {
-            Button {
-                onTapSearch()
-            } label: {
-                Image(systemName: "magnifyingglass")
-            }
-            .help("搜索")
+        .environment(\.colorScheme, .dark)
+        .task {
+            // 热门优先；历史刷新与其余色板不挡首屏
+            async let initial: Void = model.loadInitialIfNeeded()
+            try? history.refresh()
+            await initial
         }
+        .refreshable {
+            try? history.refresh()
+            await model.reload()
+        }
+        .navigationTitle("")
+        .toolbarBackground(.hidden, for: .automatic)
     }
 }
