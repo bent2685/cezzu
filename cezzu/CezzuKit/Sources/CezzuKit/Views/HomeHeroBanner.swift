@@ -1,12 +1,5 @@
 import SwiftUI
 
-/// 按压不做任何视觉反馈，保持 banner 沉浸感（系统 .plain 会整块压暗）。
-private struct HeroBannerButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-    }
-}
-
 enum HomeHeroBannerLayout {
     /// Banner 总高占视口高度比例（含状态栏区域）。
     static let viewportHeightRatio: CGFloat = 0.56
@@ -175,11 +168,7 @@ public struct HomeHeroBanner: View {
 
     @ViewBuilder
     private func bannerPage(item: BangumiItem, interactive: Bool) -> some View {
-        Button {
-            guard interactive, !isDragging, abs(dragOffset) < 8 else { return }
-            onTapItem(item)
-        } label: {
-            ZStack(alignment: .bottom) {
+        ZStack(alignment: .bottom) {
                 // ①② 底层：封面（只占上部）+ 渐变收口；下方剩余区域实心主色
                 VStack(spacing: 0) {
                     coverImage(for: item)
@@ -209,9 +198,11 @@ public struct HomeHeroBanner: View {
             .frame(maxWidth: .infinity)
             .frame(height: totalHeight)
             .contentShape(Rectangle())
-        }
-        .buttonStyle(HeroBannerButtonStyle())
-        .allowsHitTesting(interactive)
+            .onTapGesture {
+                guard interactive else { return }
+                onTapItem(item)
+            }
+            .allowsHitTesting(interactive)
     }
 
     /// 图片底部「透明 → 实心」，收口于图片底边，与下方实心区无缝。
