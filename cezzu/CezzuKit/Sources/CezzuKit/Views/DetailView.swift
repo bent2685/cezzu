@@ -772,7 +772,8 @@ public struct DetailView: View {
 
     public var body: some View {
         GeometryReader { proxy in
-            let bottomInset = max(112, proxy.safeAreaInsets.bottom + 56)
+            // 整页已 ignoresSafeArea，proxy 读不到真实底部安全区，直接留够 dock 的高度
+            let bottomInset = max(148, proxy.safeAreaInsets.bottom + 56)
             ZStack(alignment: .topLeading) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
@@ -808,7 +809,9 @@ public struct DetailView: View {
             .animation(.spring(response: 0.28, dampingFraction: 0.86), value: heldCharacter?.id)
             .sensoryFeedback(.impact(flexibility: .soft, intensity: 0.7), trigger: heldCharacter?.id)
         }
-        .ignoresSafeArea(edges: .top)
+        // 上下都铺满：内容要能滚到 dock 底下，否则 dock 的玻璃背后空无一物，
+        // 会渲染成一块与页面脱节的浅色卡片（首页 dock 通透正是因为有内容穿过）。
+        .ignoresSafeArea()
         // 底色铺在 clipped 的外面，否则铺不到 dock 所在的底部安全区，
         // 那一条会露出 TabView 自己的底色。
         .background {
@@ -816,8 +819,6 @@ public struct DetailView: View {
                 .ignoresSafeArea()
                 .animation(.easeInOut(duration: 0.5), value: model.coverPalette)
         }
-        // dock 背后那层系统底板与页面底色对不上，藏掉让 dock 直接浮在页面上。
-        // 用 .automatic 而非 .tabBar —— 后者在 macOS 不可用，CezzuKit 内不做平台分叉。
         .toolbarBackground(.hidden, for: .automatic)
         .task {
             await model.load()
