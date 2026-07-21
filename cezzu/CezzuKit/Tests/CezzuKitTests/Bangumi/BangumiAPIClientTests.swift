@@ -61,6 +61,48 @@ struct BangumiAPIClientTests {
         #expect(items[1].id == 100)
     }
 
+    /// 热度在 subject 外层的 `count` 里，必须被回填进 item.heat；缺失时回落到 0。
+    @Test("trending backfills outer count into item heat")
+    func trendingBackfillsHeat() async throws {
+        let trendingJSON = """
+        {
+            "data": [
+                {
+                    "subject": {
+                        "id": 1,
+                        "name": "A",
+                        "nameCN": "甲",
+                        "info": "12话 / 2026年7月2日 / 某导演",
+                        "metaTags": ["TV", "日本"],
+                        "images": {"large": "L", "common": "C", "medium": "M", "small": "S", "grid": "G"},
+                        "rating": {"rank": 1, "score": 8.0}
+                    },
+                    "count": 9986
+                },
+                {
+                    "subject": {
+                        "id": 2,
+                        "name": "B",
+                        "nameCN": "乙",
+                        "images": {"large": "x", "common": "x", "medium": "x", "small": "x", "grid": "x"},
+                        "rating": {"rank": 0, "score": 0}
+                    }
+                }
+            ]
+        }
+        """
+        let session = URLSession.stub(handler: { _ in (200, Data(trendingJSON.utf8)) })
+        let client = BangumiAPIClient(session: session)
+        let items = try await client.trending(limit: 2, offset: 0)
+        #expect(items.count == 2)
+        #expect(items[0].heat == 9986)
+        #expect(items[0].info == "12话 / 2026年7月2日 / 某导演")
+        #expect(items[0].metaTags == ["TV", "日本"])
+        // 没有 count 的条目热度为 0，不能崩也不能串到上一条
+        #expect(items[1].heat == 0)
+        #expect(items[1].metaTags.isEmpty)
+    }
+
     /// `search(keyword:sort:)` 应该向 api.bgm.tv 发 POST + JSON body，带关键字与排序。
     @Test("search sends POST with JSON body containing keyword and sort")
     func searchHappyPath() async throws {

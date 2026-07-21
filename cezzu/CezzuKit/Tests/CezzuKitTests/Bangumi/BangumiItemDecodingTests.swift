@@ -260,3 +260,146 @@ struct BangumiItemDecodingTests {
         #expect(restored.ratingTotal == 999)
     }
 }
+
+@Suite("BangumiItem extended fields")
+struct BangumiItemExtendedFieldsTests {
+
+    /// trending 返回 info / metaTags，但没有 summary / tags / date。
+    @Test("trending: info and metaTags decode")
+    func decodeTrendingExtras() throws {
+        let json = """
+        {
+            "id": 622206,
+            "name": "ヤニねこ",
+            "nameCN": "尼古喵喵",
+            "type": 2,
+            "info": "2026年7月2日 / 木村拓 / 松浦力",
+            "metaTags": ["TV", "日本", "漫画改"],
+            "rating": {"rank": 1991, "score": 7.14, "total": 2243},
+            "images": {"large": "L", "common": "C", "medium": "M", "small": "S", "grid": "G"}
+        }
+        """.data(using: .utf8)!
+        let item = try JSONDecoder().decode(BangumiItem.self, from: json)
+        #expect(item.info == "2026年7月2日 / 木村拓 / 松浦力")
+        #expect(item.metaTags == ["TV", "日本", "漫画改"])
+        #expect(item.heat == 0)
+        #expect(item.summary.isEmpty)
+        #expect(item.tags.isEmpty)
+    }
+
+    /// subject 接口用蛇形 meta_tags，并带 total_episodes / collection / infobox。
+    @Test("subject: meta_tags, total_episodes, collection, infobox decode")
+    func decodeSubjectExtras() throws {
+        let json = """
+        {
+            "id": 622206,
+            "name": "ヤニねこ",
+            "name_cn": "尼古喵喵",
+            "date": "2026-07-02",
+            "platform": "TV",
+            "eps": 0,
+            "total_episodes": 12,
+            "meta_tags": ["TV", "日本", "漫画改"],
+            "collection": {"on_hold": 89, "dropped": 173, "wish": 1498, "collect": 281, "doing": 10111},
+            "infobox": [
+                {"key": "放送星期", "value": "星期四"},
+                {"key": "别名", "value": [{"v": "Yani Neko"}, {"v": "Chainsmoker Cat"}]},
+                {"key": "每集时长", "value": "24分"}
+            ],
+            "rating": {"rank": 1991, "score": 7.1, "total": 2242},
+            "images": {"large": "L", "common": "C", "medium": "M", "small": "S", "grid": "G"}
+        }
+        """.data(using: .utf8)!
+        let item = try JSONDecoder().decode(BangumiItem.self, from: json)
+        #expect(item.metaTags == ["TV", "日本", "漫画改"])
+        #expect(item.totalEpisodes == 12)
+        #expect(item.eps == 0)
+        // eps 为 0 时 episodeCount 必须回落到 total_episodes
+        #expect(item.episodeCount == 12)
+        #expect(item.collection?.doing == 10111)
+        #expect(item.collection?.total == 12152)
+        #expect(item.infoboxValue(forAnyOf: ["放送星期"]) == "星期四")
+        // 数组形态的 value 被拍平成「、」连接
+        #expect(item.infoboxValue(forAnyOf: ["别名"]) == "Yani Neko、Chainsmoker Cat")
+        #expect(item.episodeDuration == "24分")
+    }
+
+    @Test("infoboxValue falls through missing keys and returns nil when absent")
+    func infoboxLookupFallthrough() {
+        let item = BangumiItem(
+            id: 1, name: "n", nameCn: "n", summary: "", airDate: "", rank: 0,
+            ratingScore: 0, images: .empty, tags: [],
+            infobox: [BangumiInfoboxEntry(key: "话数", value: "12")]
+        )
+        #expect(item.infoboxValue(forAnyOf: ["集数", "话数"]) == "12")
+        #expect(item.infoboxValue(forAnyOf: ["不存在"]) == nil)
+        #expect(item.infoboxValue(forAnyOf: []) == nil)
+    }
+
+    /// 空字符串的 infobox 值要被当作缺失，继续往下一个 key 找。
+    @Test("infoboxValue skips empty values")
+    func infoboxSkipsEmpty() {
+        let item = BangumiItem(
+            id: 1, name: "n", nameCn: "n", summary: "", airDate: "", rank: 0,
+            ratingScore: 0, images: .empty, tags: [],
+            infobox: [
+                BangumiInfoboxEntry(key: "片长", value: ""),
+                BangumiInfoboxEntry(key: "每集时长", value: "24分"),
+            ]
+        )
+        #expect(item.infoboxValue(forAnyOf: ["片长", "每集时长"]) == "24分")
+    }
+
+    @Test("withHeat returns a copy carrying the trending count")
+    func withHeatCopies() {
+        let base = BangumiItem(
+            id: 1, name: "n", nameCn: "n", summary: "", airDate: "", rank: 0,
+            ratingScore: 0, images: .empty, tags: []
+        )
+        #expect(base.heat == 0)
+        let hot = base.withHeat(9986)
+        #expect(hot.heat == 9986)
+        #expect(base.heat == 0)
+        #expect(hot.id == base.id)
+    }
+
+    /// 缓存往返：新字段必须能编码回来，否则磁盘缓存的 banner 会丢热度。
+    @Test("round-trip preserves extended fields")
+    func roundTripExtended() throws {
+        let original = BangumiItem(
+            id: 7, name: "N", nameCn: "名", summary: "s", airDate: "2025-04-01",
+            rank: 3, ratingScore: 8.4, images: .empty, tags: [],
+            info: "12话 / 2025年4月1日", metaTags: ["TV", "日本"],
+            totalEpisodes: 12,
+            collection: BangumiCollection(wish: 1, collect: 2, doing: 3, onHold: 4, dropped: 5),
+            infobox: [BangumiInfoboxEntry(key: "导演", value: "某人")],
+            heat: 4242
+        )
+        let restored = try JSONDecoder().decode(
+            BangumiItem.self, from: JSONEncoder().encode(original)
+        )
+        #expect(restored.info == original.info)
+        #expect(restored.metaTags == original.metaTags)
+        #expect(restored.totalEpisodes == 12)
+        #expect(restored.collection?.doing == 3)
+        #expect(restored.collection?.total == 15)
+        #expect(restored.infoboxValue(forAnyOf: ["导演"]) == "某人")
+        #expect(restored.heat == 4242)
+    }
+
+    /// 老缓存没有这些字段，解码必须给出安全默认值而不是抛错。
+    @Test("legacy cache without new fields decodes with defaults")
+    func legacyCacheDecodes() throws {
+        let json = """
+        {"id": 1, "name": "N", "name_cn": "名", "rating": {"score": 7.0}}
+        """.data(using: .utf8)!
+        let item = try JSONDecoder().decode(BangumiItem.self, from: json)
+        #expect(item.info.isEmpty)
+        #expect(item.metaTags.isEmpty)
+        #expect(item.totalEpisodes == 0)
+        #expect(item.collection == nil)
+        #expect(item.infobox.isEmpty)
+        #expect(item.heat == 0)
+        #expect(item.episodeCount == 0)
+    }
+}

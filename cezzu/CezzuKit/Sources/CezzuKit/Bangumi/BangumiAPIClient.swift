@@ -284,7 +284,7 @@ public actor BangumiAPIClient: BangumiAPIClientProtocol {
     private func decodeTrending(_ data: Data) throws -> [BangumiItem] {
         do {
             let envelope = try JSONDecoder().decode(TrendingEnvelope.self, from: data)
-            return envelope.data.map(\.subject)
+            return envelope.data.map { $0.subject.withHeat($0.count ?? 0) }
         } catch {
             throw BangumiAPIError.decoding(message: String(describing: error))
         }
@@ -386,6 +386,8 @@ private struct TrendingEnvelope: Decodable {
     let data: [TrendingItem]
     struct TrendingItem: Decodable {
         let subject: BangumiItem
+        /// 榜单热度，在 subject 外层，解码后回填进 item。
+        let count: Int?
     }
 }
 
