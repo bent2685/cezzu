@@ -68,26 +68,16 @@ public struct BangumiCard: View {
                 startPoint: .top,
                 endPoint: .bottom
             )
-            HStack(alignment: .bottom, spacing: 8) {
+            HStack(alignment: .center, spacing: 4) {
                 if item.ratingScore > 0 {
-                    HStack(alignment: .center, spacing: 4) {
-                        Image(systemName: "star.fill")
-                            .foregroundStyle(.yellow)
-                        Text(String(format: "%.1f", item.ratingScore))
-                            .lineLimit(1)
-                    }
+                    Image(systemName: "star.fill")
+                        .foregroundStyle(.yellow)
+                    Text(String(format: "%.1f", item.ratingScore))
+                        .lineLimit(1)
                 }
-                Spacer(minLength: 8)
-                if item.ratingTotal > 0 {
-                    HStack(alignment: .center, spacing: 4) {
-                        Image(systemName: "flame.fill")
-                            .foregroundStyle(.orange)
-                        Text("\(item.ratingTotal)")
-                            .lineLimit(1)
-                    }
-                }
+                Spacer(minLength: 0)
             }
-            .font(.caption2.weight(.semibold))
+            .font(.caption.weight(.bold))
             .foregroundStyle(.white)
             .padding(.horizontal, 10)
             .padding(.bottom, 10)
