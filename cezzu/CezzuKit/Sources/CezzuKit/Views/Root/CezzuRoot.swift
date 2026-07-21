@@ -3,8 +3,11 @@ import SwiftUI
 
 /// Cezzu App 的根视图。两个 App target（iOS / macOS）都把它作为 entry。
 ///
-/// 内部根据 `horizontalSizeClass` 选择 TabView（iPhone）或 NavigationSplitView
-/// （iPad / Mac）。逻辑层零分叉。
+/// 按 `horizontalSizeClass` 分壳：
+/// - compact（iPhone）→ `CompactRootView` + 窄屏页（`HomeView` / `SearchView` / `DetailView`）
+/// - regular（iPad / Mac）→ `SplitRootView` + 宽屏页（`RegularHomeView` / `RegularSearchView` / `RegularDetailView`）
+///
+/// 宽窄屏首页 / 搜索 / 详情 **分开维护**，不再用同一套自适应布局。
 public struct CezzuRoot: View {
     /// 外部传入的 session（macOS 多窗口场景）。不能放进 @State，否则 App 侧替换 session 时
     /// Root 会继续持有旧的 empty fallback，导致规则/历史永远不加载。
@@ -527,7 +530,7 @@ struct SplitRootView: View {
     @State private var sidebarItem: SidebarItem? = .home
     @State private var path: [Route] = []
     @State private var searchModel: SearchViewModel
-    @State private var homeModel: HomeViewModel
+    @State private var homeModel: RegularHomeViewModel
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     enum SidebarItem: Hashable, Identifiable {
@@ -560,7 +563,7 @@ struct SplitRootView: View {
             )
         )
         self._homeModel = State(
-            initialValue: HomeViewModel(api: session.bangumiAPI)
+            initialValue: RegularHomeViewModel(api: session.bangumiAPI)
         )
     }
 
@@ -676,14 +679,10 @@ struct SplitRootView: View {
     private var rootContent: some View {
         switch sidebarItem ?? .home {
         case .home:
-            HomeView(
+            RegularHomeView(
                 model: homeModel,
-                history: session.history,
                 onTapItem: { item in path.append(Route.detail(item)) },
-                onTapSection: { section in path.append(Route.tagSection(tag: section.tag)) },
-                onTapHistoryEntry: { entry in
-                    path.append(Route.historyDetail(historyHint(from: entry)))
-                }
+                onTapSearch: { path.append(Route.search) }
             )
         case .follow:
             FollowView(followStore: session.followStore) { item in
@@ -702,23 +701,18 @@ struct SplitRootView: View {
     private func navigationDestination(for route: Route) -> some View {
         switch route {
         case .home:
-            HomeView(
+            RegularHomeView(
                 model: homeModel,
-                history: session.history,
                 onTapItem: { item in path.append(Route.detail(item)) },
-                onTapSection: { section in path.append(Route.tagSection(tag: section.tag)) },
-                onTapHistoryEntry: { entry in
-                    path.append(Route.historyDetail(historyHint(from: entry)))
-                }
+                onTapSearch: { path.append(Route.search) }
             )
         case .search:
-            SearchView(
+            RegularSearchView(
                 model: searchModel,
-                browseModel: homeModel,
-                onTapItem: { item in path.append(Route.detail(item)) },
-                onTapSection: { section in path.append(Route.tagSection(tag: section.tag)) }
+                onTapItem: { item in path.append(Route.detail(item)) }
             )
         case .tagSection(let tag):
+            // 宽屏主页不走「查看全部」路由；保留以兼容深链 / 残留 path。
             TagSectionView(
                 api: session.bangumiAPI,
                 tag: tag,
@@ -726,7 +720,7 @@ struct SplitRootView: View {
             )
         case .detail(let item):
             let historyEntry = try? session.history.entry(forBangumiItem: item)
-            DetailView(
+            RegularDetailView(
                 model: DetailViewModel(
                     item: item,
                     rules: session.store.enabledRules(),
@@ -741,7 +735,7 @@ struct SplitRootView: View {
                 path.append(Route.search)
             }
         case .historyDetail(let hint):
-            DetailView(
+            RegularDetailView(
                 model: DetailViewModel(
                     item: hint.item,
                     rules: session.store.enabledRules(),

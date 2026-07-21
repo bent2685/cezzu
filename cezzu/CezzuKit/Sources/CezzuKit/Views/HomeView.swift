@@ -1,9 +1,11 @@
 import SwiftUI
 
-/// 主页 —— Bangumi.tv 番剧浏览。
+/// 窄屏（iPhone）主页 —— Bangumi.tv 番剧浏览。
 ///
 /// 层叠：全页实心主色底 → Banner 图（顶区）→ List（透明底）盖在上面。
 /// Banner 内自带「透明→实心」scrim，底部与页面实心色对齐，滚动无硬边。
+///
+/// 宽屏主页见 `RegularHomeView`；宽窄屏分开维护，不做同一套自适应。
 public struct HomeView: View {
     @Bindable var model: HomeViewModel
     @Bindable var history: HistoryStore

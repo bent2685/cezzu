@@ -1,13 +1,11 @@
 import SwiftUI
 
-/// 窄屏（iPhone）搜索屏：顶部搜索框 + 排序筛选；未搜索时展示与首页一致的分区浏览。
+/// 宽屏（macOS / iPad）搜索屏 —— 昨晚 v0.1.2 布局（未搜索时为空状态，不做分区浏览）。
 ///
-/// 宽屏搜索见 `RegularSearchView`；宽窄屏分开维护。
-public struct SearchView: View {
+/// 窄屏搜索见 `SearchView`。两者分开维护。
+public struct RegularSearchView: View {
     @Bindable var model: SearchViewModel
-    @Bindable var browseModel: HomeViewModel
     var onTapItem: (BangumiItem) -> Void
-    var onTapSection: (HomeSection) -> Void
     @Environment(\.colorScheme) private var colorScheme
     @FocusState private var isInputFocused: Bool
     @State private var advancedExpanded: Bool = false
@@ -17,16 +15,9 @@ public struct SearchView: View {
     /// 历史下拉一次最多显示多少条。
     private static let historyDropdownLimit: Int = 8
 
-    public init(
-        model: SearchViewModel,
-        browseModel: HomeViewModel,
-        onTapItem: @escaping (BangumiItem) -> Void,
-        onTapSection: @escaping (HomeSection) -> Void
-    ) {
+    public init(model: SearchViewModel, onTapItem: @escaping (BangumiItem) -> Void) {
         self.model = model
-        self.browseModel = browseModel
         self.onTapItem = onTapItem
-        self.onTapSection = onTapSection
     }
 
     public var body: some View {
@@ -400,24 +391,11 @@ public struct SearchView: View {
                 resultsGrid
             }
         } else {
-            // 未发起搜索：展示与首页一致的分区横向浏览。
-            // 嵌在外层 ScrollView 里，只预渲染已建骨架的分区；加载仍按行 .task 触发。
-            VStack(alignment: .leading, spacing: BangumiSectionLayout.sectionSpacing) {
-                ForEach(browseModel.sections) { content in
-                    BangumiSectionRow(
-                        content: content,
-                        onTapItem: onTapItem,
-                        onTapSeeAll: { onTapSection(content.section) },
-                        onRetry: {
-                            Task { await browseModel.retrySection(content.id) }
-                        }
-                    )
-                    .task(id: content.id) {
-                        await browseModel.loadSectionIfNeeded(content.id)
-                    }
-                }
-            }
-            .task { await browseModel.loadInitialIfNeeded() }
+            EmptyStateView(
+                systemImage: "sparkle.magnifyingglass",
+                title: "开始搜索吧",
+                message: "输入番剧名，或在高级筛选里挑标签 / 评分 / 年代。"
+            )
         }
     }
 

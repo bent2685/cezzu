@@ -1,732 +1,19 @@
 import SwiftUI
 
-/// 规则因反爬策略要求用户解验证码时，UI 拿着它打开 `CaptchaVerificationSheet`。
-public struct CaptchaChallenge: Hashable, Sendable, Identifiable {
-    public let ruleName: String
-    public let url: URL
-    public let userAgent: String
-
-    public var id: String { ruleName }
-
-    public init(ruleName: String, url: URL, userAgent: String) {
-        self.ruleName = ruleName
-        self.url = url
-        self.userAgent = userAgent
-    }
-}
-
-/// 搜索期间被拦下的源。当前只有 captcha 一种原因，预留 enum 以便后续扩展
-/// （比如 Cloudflare challenge、IP 封禁等）。
-public struct BlockedSource: Hashable, Sendable, Identifiable {
-    public enum Reason: Hashable, Sendable {
-        case captchaRequired(url: URL, userAgent: String)
-    }
-
-    public let ruleName: String
-    public let reason: Reason
-
-    public var id: String { ruleName }
-
-    public init(ruleName: String, reason: Reason) {
-        self.ruleName = ruleName
-        self.reason = reason
-    }
-}
-
-public struct PlayableSource: Hashable, Sendable, Identifiable {
-    public let result: SearchResult
-
-    public var id: String { result.ruleName }
-    public var ruleName: String { result.ruleName }
-
-    public init(result: SearchResult) {
-        self.result = result
-    }
-}
-
-public enum SourceEpisodesState: Hashable, Sendable {
-    case idle
-    case loading
-    case loaded(AnimeDetail)
-    case failed(message: String)
-}
-
-/// 跨页面传递的播放源搜索缓存，避免播放页重复搜索。
-public struct SourceSearchCache: Sendable {
-    public let sources: [PlayableSource]
-    public let sourceStates: [PlayableSource.ID: SourceEpisodesState]
-}
-
-public enum DetailTab: String, CaseIterable, Hashable, Sendable {
-    case overview
-    case comments
-    case characters
-    case reviews
-    case staff
-
-    /// 出现在 tab 栏里的项。「吐槽」不在其中 —— 它作为概览最下方的一段常驻展示。
-    public static var tabBarCases: [DetailTab] {
-        allCases.filter { $0 != .comments }
-    }
-
-    public var title: String {
-        switch self {
-        case .overview:
-            return "概览"
-        case .comments:
-            return "吐槽"
-        case .characters:
-            return "角色"
-        case .reviews:
-            return "评论"
-        case .staff:
-            return "制作人员"
-        }
-    }
-}
-
-@MainActor
-@Observable
-public final class DetailViewModel {
-    public let item: BangumiItem
-    public var selectedTab: DetailTab = .overview
-    public private(set) var sources: [PlayableSource] = []
-    public private(set) var selectedSourceID: PlayableSource.ID?
-    public private(set) var selectedRoadIndex: Int = 0
-    public private(set) var sourceStates: [PlayableSource.ID: SourceEpisodesState] = [:]
-    public private(set) var isSearchingSources: Bool = false
-    public private(set) var sourceSearchFailed: String?
-    public private(set) var comments: [BangumiSubjectComment] = []
-    public private(set) var reviews: [BangumiSubjectReview] = []
-    public private(set) var characters: [BangumiRelatedCharacter] = []
-    public private(set) var staff: [BangumiRelatedPerson] = []
-    public private(set) var tags: [BangumiTag]
-    public private(set) var airDate: String = ""
-    public private(set) var eps: Int = 0
-    public private(set) var platform: String = ""
-    public private(set) var episodeDuration: String = ""
-    public private(set) var ratingTotal: Int = 0
-    public private(set) var metaTags: [String] = []
-    public private(set) var episodeCount: Int = 0
-    public private(set) var collection: BangumiCollection?
-    public private(set) var infobox: [BangumiInfoboxEntry] = []
-    public private(set) var summary: String = ""
-    /// 封面提取的主色，详情页整页底色跟着它走（与首页 banner 同一套取色）。
-    public private(set) var coverPalette: CoverColorPalette = .fallback
-    /// 宽屏旧版详情 UI（`RegularDetailView`）用的背景强调色，由封面色板推导。
-    public var backdropColor: Color { coverPalette.darkened.color }
-    public private(set) var loadingTabs: Set<DetailTab> = []
-    public private(set) var tabErrors: [DetailTab: String] = [:]
-    public let historyHint: HistoryResumeHint?
-
-    /// 搜索过程中被反爬拦截（目前只有 captcha）但还没解决的源。
-    /// UI 把它们排在正常 sources 之后，用户点击才会触发 `openCaptcha`。
-    public private(set) var blockedSources: [BlockedSource] = []
-
-    /// 当前正在进行的验证码挑战。只有用户主动点 blocked source 才会被赋值，
-    /// sheet 通过 `.sheet(item:)` 绑到这个字段，避免进详情页就弹窗。
-    public var activeCaptcha: CaptchaChallenge?
-
-    private var rules: [CezzuRule]
-    private let api: BangumiAPIClientProtocol
-    private let searchCoordinator: SourceSearchCoordinating
-    private let engine: RuleEngine
-    private var loadedBackdropColor: Bool = false
-    private var loadedSubject: Bool = false
-
-    public init(
-        item: BangumiItem,
-        rules: [CezzuRule],
-        api: BangumiAPIClientProtocol = BangumiAPIClient.shared,
-        historyHint: HistoryResumeHint? = nil,
-        searchCoordinator: SourceSearchCoordinating = SearchCoordinator(),
-        engine: RuleEngine = LiveRuleEngine()
-    ) {
-        self.item = item
-        self.rules = rules
-        self.api = api
-        self.historyHint = historyHint
-        self.searchCoordinator = searchCoordinator
-        self.engine = engine
-        self.tags = item.tags
-        self.airDate = item.airDate
-        self.summary = item.summary
-        self.metaTags = item.metaTags
-        self.episodeCount = item.episodeCount
-        self.platform = item.platform
-        self.episodeDuration = item.episodeDuration
-        self.ratingTotal = item.ratingTotal
-        self.collection = item.collection
-        self.infobox = item.infobox
-    }
-
-    public func load() async {
-        async let backdrop: Void = loadBackdropColorIfNeeded()
-        async let sources: Void = loadSourcesIfNeeded()
-        async let subject: Void = loadSubjectIfNeeded()
-        _ = await (backdrop, sources, subject)
-    }
-
-    /// 热度：trending 带过来的榜单热度优先，否则用收藏总人数兜底。
-    public var heat: Int {
-        item.heat > 0 ? item.heat : (collection?.total ?? 0)
-    }
-
-    /// 热度是不是「在榜热度」——决定详情页标注用「热度」还是「收藏」。
-    public var heatIsTrending: Bool {
-        item.heat > 0
-    }
-
-    /// 资料区条目：从 infobox 里挑对观众有用的，保持这个顺序。
-    public var factRows: [(String, String)] {
-        var rows: [(String, String)] = []
-        func append(_ label: String, _ keys: [String]) {
-            if let value = infoboxValue(keys) {
-                rows.append((label, value))
-            }
-        }
-        if !airDate.isEmpty {
-            rows.append(("放送开始", airDate))
-        }
-        append("放送星期", ["放送星期"])
-        if episodeCount > 0 {
-            rows.append(("话数", "\(episodeCount) 话"))
-        }
-        if !episodeDuration.isEmpty {
-            rows.append(("片长", episodeDuration))
-        }
-        if !platform.isEmpty {
-            rows.append(("类型", platform))
-        }
-        append("导演", ["导演"])
-        append("原作", ["原作"])
-        append("脚本", ["脚本", "系列构成"])
-        append("音乐", ["音乐"])
-        append("人物设定", ["人物设定"])
-        append("动画制作", ["动画制作", "製作", "制作"])
-        append("播放电视台", ["播放电视台"])
-        append("别名", ["别名"])
-        append("官方网站", ["官方网站"])
-        return rows
-    }
-
-    private func infoboxValue(_ keys: [String]) -> String? {
-        for key in keys {
-            if let hit = infobox.first(where: { $0.key == key })?.value, !hit.isEmpty {
-                return hit
-            }
-        }
-        return nil
-    }
-
-    public func updateRules(_ newRules: [CezzuRule]) async {
-        guard rules.map(\.name) != newRules.map(\.name) else { return }
-        rules = newRules
-
-        if sources.isEmpty && !isSearchingSources {
-            await loadSourcesIfNeeded()
-        }
-    }
-
-    public func selectTab(_ tab: DetailTab) async {
-        selectedTab = tab
-        await loadTabIfNeeded(tab)
-    }
-
-    public func selectSource(_ id: PlayableSource.ID) async {
-        guard selectedSourceID != id || selectedDetail == nil else { return }
-        guard let source = sources.first(where: { $0.id == id }) else { return }
-        selectedSourceID = id
-        selectedRoadIndex = 0
-
-        if case .loaded = sourceStates[id] {
-            return
-        }
-        sourceStates[id] = .loading
-
-        guard let rule = rule(for: source) else {
-            sourceStates[id] = .failed(message: "未找到对应规则")
-            return
-        }
-
-        do {
-            let roads = try await engine.fetchEpisodes(detailURL: source.result.detailURL, with: rule)
-            let detail = AnimeDetail(
-                title: item.displayName,
-                detailURL: source.result.detailURL,
-                ruleName: source.ruleName,
-                roads: roads
-            )
-            sourceStates[id] = .loaded(detail)
-        } catch {
-            sourceStates[id] = .failed(message: "\(error)")
-        }
-    }
-
-    public func selectRoad(_ index: Int) {
-        selectedRoadIndex = index
-    }
-
-    /// 用户点击了 blocked 源 —— 打开对应的验证码 sheet。如果原因不是 captcha（未来扩展时）
-    /// 就只把它从 blocked 里移掉，交给调用方自行重试。
-    public func openCaptcha(for ruleName: String) {
-        guard let blocked = blockedSources.first(where: { $0.ruleName == ruleName }) else { return }
-        switch blocked.reason {
-        case .captchaRequired(let url, let userAgent):
-            activeCaptcha = CaptchaChallenge(
-                ruleName: ruleName,
-                url: url,
-                userAgent: userAgent
-            )
-        }
-    }
-
-    /// 用户在 sheet 里完成了验证：清掉 active / blocked 条目，对该规则单独重试搜索。
-    public func resolveCaptcha(_ challenge: CaptchaChallenge) async {
-        activeCaptcha = nil
-        blockedSources.removeAll { $0.ruleName == challenge.ruleName }
-        await retrySearch(ruleName: challenge.ruleName)
-    }
-
-    public func dismissCaptcha() {
-        activeCaptcha = nil
-    }
-
-    /// 针对单个规则重新搜一次。成功则把结果并入 sources；再次命中 captcha 则重新进 blocked。
-    private func retrySearch(ruleName: String) async {
-        guard let rule = rules.first(where: { $0.name == ruleName }) else { return }
-        let stream = searchCoordinator.searchAll(
-            keywords: searchKeywords,
-            rules: [rule],
-            deadline: .now + .seconds(4)
-        )
-        var matchesByRule: [String: SearchResult] = Dictionary(
-            uniqueKeysWithValues: sources.map { ($0.ruleName, $0.result) }
-        )
-        let keywords = searchKeywords
-        for await update in stream {
-            if case .ruleCaptchaRequired(let name, let url, let userAgent) = update {
-                let reason = BlockedSource.Reason.captchaRequired(url: url, userAgent: userAgent)
-                if let index = blockedSources.firstIndex(where: { $0.ruleName == name }) {
-                    blockedSources[index] = BlockedSource(ruleName: name, reason: reason)
-                } else {
-                    blockedSources.append(BlockedSource(ruleName: name, reason: reason))
-                }
-                continue
-            }
-            if case .ruleResults(let name, let results) = update {
-                if let chosen = keywords.lazy.compactMap({ self.bestMatch(in: results, keyword: $0) }).first {
-                    matchesByRule[name] = chosen
-                }
-            }
-        }
-        sources = sortedSources(from: matchesByRule)
-        if selectedSourceID == nil, let first = sources.first {
-            await selectSource(first.id)
-        }
-    }
-
-    public var selectedSource: PlayableSource? {
-        guard let selectedSourceID else { return sources.first }
-        return sources.first(where: { $0.id == selectedSourceID })
-    }
-
-    public var selectedDetail: AnimeDetail? {
-        guard let source = selectedSource else { return nil }
-        if case .loaded(let detail) = sourceStates[source.id] {
-            return detail
-        }
-        return nil
-    }
-
-    public var selectedSourceState: SourceEpisodesState {
-        guard let source = selectedSource else { return .idle }
-        return sourceStates[source.id] ?? .idle
-    }
-
-    public var sourceCache: SourceSearchCache {
-        SourceSearchCache(sources: sources, sourceStates: sourceStates)
-    }
-
-    public var currentEpisodes: [Episode] {
-        guard let detail = selectedDetail, detail.roads.indices.contains(selectedRoadIndex) else {
-            return []
-        }
-        return detail.roads[selectedRoadIndex].episodes
-    }
-
-    public var primaryMeta: String {
-        var parts: [String] = []
-        if item.ratingScore > 0 {
-            parts.append(String(format: "%.1f", item.ratingScore))
-        }
-        if !airDate.isEmpty {
-            parts.append(airDate)
-        }
-        if item.rank > 0 {
-            parts.append("Rank #\(item.rank)")
-        }
-        return parts.joined(separator: "  ")
-    }
-
-    public var loadingCurrentTab: Bool {
-        loadingTabs.contains(selectedTab)
-    }
-
-    public var currentTabError: String? {
-        tabErrors[selectedTab]
-    }
-
-    public func playbackRequestForFirstEpisode() -> PlaybackRequest? {
-        playbackRequest(episodeIndex: 0)
-    }
-
-    public func playbackRequestForResume() -> PlaybackRequest? {
-        guard let historyHint,
-            let detail = selectedDetail,
-            let source = selectedSource,
-            let rule = rule(for: source),
-            source.ruleName == historyHint.ruleName,
-            detail.roads.indices.contains(selectedRoadIndex),
-            detail.roads[selectedRoadIndex].episodes.indices.contains(historyHint.episodeIndex),
-            detail.roads[selectedRoadIndex].episodes[historyHint.episodeIndex].title == historyHint.episodeTitle
-        else {
-            return nil
-        }
-
-        return PlaybackRequest(
-            anime: detail,
-            roadIndex: selectedRoadIndex,
-            episodeIndex: historyHint.episodeIndex,
-            rule: rule,
-            item: item
-        )
-    }
-
-    public func playbackRequest(episodeIndex: Int) -> PlaybackRequest? {
-        guard let detail = selectedDetail,
-            let source = selectedSource,
-            let rule = rule(for: source),
-            detail.roads.indices.contains(selectedRoadIndex),
-            detail.roads[selectedRoadIndex].episodes.indices.contains(episodeIndex)
-        else {
-            return nil
-        }
-        return PlaybackRequest(
-            anime: detail,
-            roadIndex: selectedRoadIndex,
-            episodeIndex: episodeIndex,
-            rule: rule,
-            item: item
-        )
-    }
-
-    private func loadSourcesIfNeeded() async {
-        if !sources.isEmpty || isSearchingSources { return }
-        isSearchingSources = true
-        sourceSearchFailed = nil
-
-        // 有历史恢复提示时，与搜索并行预加载偏好源的剧集数据
-        let preferredPrefetchTask: Task<Void, Never>? = prefetchPreferredSourceIfNeeded()
-
-        var matchesByRule: [String: SearchResult] = Dictionary(
-            uniqueKeysWithValues: sources.map { ($0.ruleName, $0.result) }
-        )
-        var initialSourceTask: Task<Void, Never>?
-
-        let deadline = ContinuousClock.now + .seconds(4)
-        let stream = searchCoordinator.searchAll(
-            keywords: searchKeywords,
-            rules: rules,
-            deadline: deadline
-        )
-        let keywords = searchKeywords
-        for await update in stream {
-            if case .ruleCaptchaRequired(let name, let url, let userAgent) = update {
-                let reason = BlockedSource.Reason.captchaRequired(url: url, userAgent: userAgent)
-                if let index = blockedSources.firstIndex(where: { $0.ruleName == name }) {
-                    blockedSources[index] = BlockedSource(ruleName: name, reason: reason)
-                } else {
-                    blockedSources.append(BlockedSource(ruleName: name, reason: reason))
-                }
-                continue
-            }
-            if case .ruleResults(let name, let results) = update,
-                matchesByRule[name] == nil
-            {
-                let chosen = keywords.lazy
-                    .compactMap { self.bestMatch(in: results, keyword: $0) }
-                    .first
-                if let chosen {
-                    matchesByRule[name] = chosen
-                    sources = sortedSources(from: matchesByRule)
-                    if initialSourceTask == nil, preferredPrefetchTask == nil {
-                        let sourceID = chosen.ruleName
-                        initialSourceTask = Task { @MainActor in
-                            await self.selectSource(sourceID)
-                        }
-                    }
-                }
-            }
-        }
-
-        sources = sortedSources(from: matchesByRule)
-        isSearchingSources = false
-
-        if let initialSourceTask {
-            await initialSourceTask.value
-        }
-        if let preferredPrefetchTask {
-            await preferredPrefetchTask.value
-        }
-
-        if let preferred = preferredSourceID, selectedSourceID != preferred {
-            await selectSource(preferred)
-        } else if let first = sources.first, selectedSourceID == nil {
-            await selectSource(first.id)
-        } else {
-            sourceSearchFailed = "没有匹配到可播放源"
-        }
-    }
-
-    /// 当有 historyHint 时，与搜索并行预加载偏好源的剧集数据，
-    /// 让搜索完成后 selectSource 直接命中缓存。
-    private func prefetchPreferredSourceIfNeeded() -> Task<Void, Never>? {
-        guard let hint = historyHint,
-            let rule = rules.first(where: { $0.name == hint.ruleName })
-        else { return nil }
-
-        let sourceID = hint.ruleName
-        let source = PlayableSource(
-            result: SearchResult(
-                title: item.displayName,
-                detailURL: hint.detailURL,
-                ruleName: hint.ruleName
-            )
-        )
-
-        sources = [source]
-        selectedSourceID = sourceID
-        sourceStates[sourceID] = .loading
-
-        return Task { @MainActor in
-            do {
-                let roads = try await self.engine.fetchEpisodes(detailURL: hint.detailURL, with: rule)
-                let detail = AnimeDetail(
-                    title: self.item.displayName,
-                    detailURL: hint.detailURL,
-                    ruleName: hint.ruleName,
-                    roads: roads
-                )
-                if let matchedRoadIndex = roads.firstIndex(where: { road in
-                    road.episodes.indices.contains(hint.episodeIndex)
-                        && road.episodes[hint.episodeIndex].title == hint.episodeTitle
-                }) {
-                    self.selectedRoadIndex = matchedRoadIndex
-                }
-                self.sourceStates[sourceID] = .loaded(detail)
-            } catch {
-                self.sourceStates[sourceID] = .failed(message: "\(error)")
-            }
-        }
-    }
-
-    private func loadTabIfNeeded(_ tab: DetailTab) async {
-        guard !loadingTabs.contains(tab) else { return }
-
-        switch tab {
-        case .overview:
-            return
-        case .comments where comments.isEmpty:
-            await loadComments()
-        case .characters where characters.isEmpty:
-            await loadCharacters()
-        case .reviews where reviews.isEmpty:
-            await loadReviews()
-        case .staff where staff.isEmpty:
-            await loadStaff()
-        default:
-            return
-        }
-    }
-
-    /// 取色用小图：大图要下好几百 KB，期间整页停在 fallback 色上，进页面会闪一下；
-    /// 小图通常在列表卡片处已经缓存，几乎瞬时。色板不需要高清。
-    private func loadBackdropColorIfNeeded() async {
-        guard !loadedBackdropColor else { return }
-        loadedBackdropColor = true
-        let candidates = [
-            item.images.grid,
-            item.images.small,
-            item.images.medium,
-            item.images.common,
-            item.images.large,
-        ]
-        for candidate in candidates {
-            let trimmed = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty, let url = URL(string: trimmed) else { continue }
-            if let extracted = await CoverColorExtractor.loadAndExtract(from: url) {
-                coverPalette = extracted
-                return
-            }
-        }
-    }
-
-    /// 吐槽常驻概览底部，进页面就拉一次。
-    public func loadCommentsIfNeeded() async {
-        guard comments.isEmpty, !loadingTabs.contains(.comments), item.id > 0 else { return }
-        await loadComments()
-    }
-
-    private func loadComments() async {
-        loadingTabs.insert(.comments)
-        defer { loadingTabs.remove(.comments) }
-        do {
-            comments = try await api.fetchComments(subjectID: item.id)
-            tabErrors[.comments] = nil
-        } catch {
-            tabErrors[.comments] = errorMessage(error)
-        }
-    }
-
-    /// 拉完整 subject 补齐 trending / 搜索结果里没有的字段
-    /// （简介、标签、infobox、收藏分布、总话数）。
-    private func loadSubjectIfNeeded() async {
-        guard !loadedSubject, item.id > 0 else { return }
-        do {
-            let subject = try await api.fetchSubject(subjectID: item.id)
-            loadedSubject = true
-            if !subject.tags.isEmpty {
-                tags = subject.tags
-            }
-            if !subject.airDate.isEmpty {
-                airDate = subject.airDate
-            }
-            if !subject.summary.isEmpty {
-                summary = subject.summary
-            }
-            if !subject.metaTags.isEmpty {
-                metaTags = subject.metaTags
-            }
-            if !subject.infobox.isEmpty {
-                infobox = subject.infobox
-            }
-            if subject.episodeCount > 0 {
-                episodeCount = subject.episodeCount
-            }
-            if let subjectCollection = subject.collection {
-                collection = subjectCollection
-            }
-            eps = subject.eps
-            platform = subject.platform
-            episodeDuration = subject.episodeDuration
-            ratingTotal = subject.ratingTotal
-        } catch {
-            // 详情加载失败时不影响详情页主体内容。
-        }
-    }
-
-    private func loadCharacters() async {
-        loadingTabs.insert(.characters)
-        defer { loadingTabs.remove(.characters) }
-        do {
-            characters = try await api.fetchCharacters(subjectID: item.id)
-            tabErrors[.characters] = nil
-        } catch {
-            tabErrors[.characters] = errorMessage(error)
-        }
-    }
-
-    private func loadReviews() async {
-        loadingTabs.insert(.reviews)
-        defer { loadingTabs.remove(.reviews) }
-        do {
-            reviews = try await api.fetchReviews(subjectID: item.id)
-            tabErrors[.reviews] = nil
-        } catch {
-            tabErrors[.reviews] = errorMessage(error)
-        }
-    }
-
-    private func loadStaff() async {
-        loadingTabs.insert(.staff)
-        defer { loadingTabs.remove(.staff) }
-        do {
-            staff = try await api.fetchPersons(subjectID: item.id)
-            tabErrors[.staff] = nil
-        } catch {
-            tabErrors[.staff] = errorMessage(error)
-        }
-    }
-
-    private var searchKeywords: [String] {
-        var seen: Set<String> = []
-        let candidates = [item.displayName, item.name]
-        return candidates.filter { keyword in
-            let normalized = normalize(keyword)
-            guard !normalized.isEmpty, !seen.contains(normalized) else { return false }
-            seen.insert(normalized)
-            return true
-        }
-    }
-
-    private func bestMatch(in results: [SearchResult], keyword: String) -> SearchResult? {
-        let normalizedKeyword = normalize(keyword)
-        return results.max {
-            score(for: $0.title, keyword: normalizedKeyword) < score(for: $1.title, keyword: normalizedKeyword)
-        }
-    }
-
-    private func score(for title: String, keyword: String) -> Int {
-        let normalizedTitle = normalize(title)
-        if normalizedTitle == keyword { return 3 }
-        if normalizedTitle.contains(keyword) { return 2 }
-        if keyword.contains(normalizedTitle) { return 1 }
-        return 0
-    }
-
-    private func normalize(_ value: String) -> String {
-        value
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-            .replacingOccurrences(of: " ", with: "")
-    }
-
-    private func rule(for source: PlayableSource) -> CezzuRule? {
-        rules.first(where: { $0.name == source.ruleName })
-    }
-
-    private func sortedSources(from matchesByRule: [String: SearchResult]) -> [PlayableSource] {
-        matchesByRule.values
-            .sorted { $0.ruleName.localizedStandardCompare($1.ruleName) == .orderedAscending }
-            .map(PlayableSource.init)
-    }
-
-    private var preferredSourceID: PlayableSource.ID? {
-        guard let historyHint else { return nil }
-        return sources.first(where: { $0.ruleName == historyHint.ruleName })?.id
-    }
-
-    private func errorMessage(_ error: Error) -> String {
-        if let error = error as? BangumiAPIError {
-            return error.userMessage
-        }
-        return error.localizedDescription
-    }
-}
-
-private enum DetailStyle {
+// MARK: - Regular (wide) detail chrome
+//
+// 昨晚 v0.1.2 详情页视觉与布局；窄屏走 `DetailView`。
+// 样式与调色板本地私有，避免和窄屏去卡片化 DetailStyle 互相污染。
+
+private enum RegularDetailStyle {
     static let cornerRadius: CGFloat = 8
-    /// 封面取色落地时的过渡。整页底色与 hero 渐变收口必须共用它，否则会错开露边。
-    static let paletteTransition: Animation = .easeInOut(duration: 0.5)
 
-    /// 整页底色由封面主色驱动（与首页 banner 呼应），文字层级仍用固定对比色。
-    static func palette(for colorScheme: ColorScheme, cover: CoverColorPalette) -> DetailPalette {
+    static func palette(for colorScheme: ColorScheme) -> RegularDetailPalette {
         switch colorScheme {
         case .dark:
-            return DetailPalette(
-                background: cover.darkened.color,
-                backgroundRaised: cover.color.opacity(0.22),
+            return RegularDetailPalette(
+                background: Color(red: 0.020, green: 0.020, blue: 0.024),
+                backgroundRaised: Color(red: 0.055, green: 0.058, blue: 0.066),
                 surface: Color(red: 0.075, green: 0.080, blue: 0.092),
                 surfaceRaised: Color(red: 0.105, green: 0.110, blue: 0.125),
                 textPrimary: .white,
@@ -736,9 +23,9 @@ private enum DetailStyle {
                 backdropOpacity: 0.82
             )
         default:
-            return DetailPalette(
-                background: cover.washed.color,
-                backgroundRaised: cover.washed.color,
+            return RegularDetailPalette(
+                background: .white,
+                backgroundRaised: Color(red: 0.95, green: 0.96, blue: 0.97),
                 surface: Color.white.opacity(0.88),
                 surfaceRaised: Color(red: 0.93, green: 0.94, blue: 0.95),
                 textPrimary: Color(red: 0.05, green: 0.05, blue: 0.06),
@@ -751,7 +38,7 @@ private enum DetailStyle {
     }
 }
 
-private struct DetailPalette {
+private struct RegularDetailPalette {
     let background: Color
     let backgroundRaised: Color
     let surface: Color
@@ -763,10 +50,11 @@ private struct DetailPalette {
     let backdropOpacity: Double
 }
 
-/// 窄屏（iPhone）资源详情页 —— 去卡片化 + 封面取色底。
+/// 宽屏（macOS / iPad）资源详情页 —— 昨晚 v0.1.2 的 hero + 卡片化内容区。
 ///
-/// 宽屏详情见 `RegularDetailView`；ViewModel 共用 `DetailViewModel`，UI 分开维护。
-public struct DetailView: View {
+/// 窄屏见 `DetailView`。ViewModel 共用 `DetailViewModel`。
+
+public struct RegularDetailView: View {
     @State private var model: DetailViewModel
     @State private var episodePage: Int = 0
     /// 长按角色立绘时临时放大；松手在 `onLongPressGesture(pressing:)` 里清空。
@@ -790,13 +78,13 @@ public struct DetailView: View {
 
     public var body: some View {
         GeometryReader { proxy in
-            // 整页已 ignoresSafeArea，proxy 读不到真实底部安全区，直接留够 dock 的高度
-            let bottomInset = max(148, proxy.safeAreaInsets.bottom + 56)
+            let bottomInset = max(112, proxy.safeAreaInsets.bottom + 56)
             ZStack(alignment: .topLeading) {
+                detailBackdrop(viewportSize: proxy.size)
+                    .frame(width: proxy.size.width, height: proxy.size.height)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
-                        // 封面随内容一起滚（与首页 banner 同构），滚上去不会留在原地压住正文
-                        stretchyHero(viewportSize: proxy.size)
+                        hero(viewportSize: proxy.size)
                         let contentWidth = detailContentWidth(for: proxy.size.width)
                         VStack(alignment: .leading, spacing: 0) {
                             contentTabBar(width: contentWidth)
@@ -827,17 +115,7 @@ public struct DetailView: View {
             .animation(.spring(response: 0.28, dampingFraction: 0.86), value: heldCharacter?.id)
             .sensoryFeedback(.impact(flexibility: .soft, intensity: 0.7), trigger: heldCharacter?.id)
         }
-        // 上下都铺满：内容要能滚到 dock 底下，否则 dock 的玻璃背后空无一物，
-        // 会渲染成一块与页面脱节的浅色卡片（首页 dock 通透正是因为有内容穿过）。
-        .ignoresSafeArea()
-        // 底色铺在 clipped 的外面，否则铺不到 dock 所在的底部安全区，
-        // 那一条会露出 TabView 自己的底色。
-        .background {
-            pageBackdrop
-                .ignoresSafeArea()
-                .animation(DetailStyle.paletteTransition, value: model.coverPalette)
-        }
-        .toolbarBackground(.hidden, for: .automatic)
+        .ignoresSafeArea(edges: .top)
         .task {
             await model.load()
         }
@@ -858,205 +136,166 @@ public struct DetailView: View {
         }
     }
 
-    private var palette: DetailPalette {
-        DetailStyle.palette(for: colorScheme, cover: model.coverPalette)
+    private var palette: RegularDetailPalette {
+        RegularDetailStyle.palette(for: colorScheme)
     }
 
-    /// 与首页 banner 同一套：封面铺满 hero 区，底部「透明 → 实心」收口到页面底色。
     @ViewBuilder
     private func detailBackdrop(viewportSize: CGSize) -> some View {
-        backgroundCover
-            .frame(width: viewportSize.width)
-            .frame(maxHeight: .infinity)
-            .clipped()
-            .overlay { palette.background.opacity(colorScheme == .dark ? 0.16 : 0.04) }
-            .overlay { backdropScrim }
-            // 必须和整页底色用同一条动画曲线：取色落地时若两者节奏不一致，
-            // 渐变收口色与页面底色会错开半秒，露出一条硬边。
-            .animation(DetailStyle.paletteTransition, value: model.coverPalette)
-            .allowsHitTesting(false)
-    }
-
-    /// 整页底：实心主色 + 底部 dock 区的封面色回光，与首页「实心底 + 呼吸光」呼应。
-    ///
-    /// 回光必须锁在底部这一小段里。若让它从页面中部就起效，hero 底部的渐变收口
-    /// （收在纯底色上）和已经带了回光的页面底色会差出几个百分点，交界处露一条线。
-    private var pageBackdrop: some View {
-        ZStack(alignment: .bottom) {
+        ZStack(alignment: .topTrailing) {
             palette.background
+                .ignoresSafeArea()
+            backgroundCover
+                .frame(
+                    width: max(viewportSize.width * 0.72, 620),
+                    height: max(viewportSize.height * 0.72, 540)
+                )
+                .mask(backgroundCoverFeather)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .clipped()
+                .opacity(palette.backdropOpacity)
+            LinearGradient(
+                colors: [
+                    palette.background,
+                    palette.background.opacity(0.96),
+                    palette.background.opacity(0.55),
+                    Color.clear,
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .ignoresSafeArea()
             LinearGradient(
                 colors: [
                     Color.clear,
-                    model.coverPalette.lifted.color.opacity(colorScheme == .dark ? 0.20 : 0.12),
+                    palette.background.opacity(0.62),
+                    palette.background,
                 ],
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .frame(height: DetailContentStyle.dockGlowHeight)
-        }
-    }
-
-    private var backdropScrim: some View {
-        ZStack {
-            LinearGradient(
-                stops: [
-                    .init(color: .clear, location: 0),
-                    .init(color: .clear, location: 0.24),
-                    .init(color: palette.background.opacity(0.42), location: 0.5),
-                    .init(color: palette.background.opacity(0.8), location: 0.68),
-                    .init(color: palette.background.opacity(0.96), location: 0.85),
-                    .init(color: palette.background, location: 1.0),
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            // 状态栏 / 返回键区域轻压暗，保证控件在亮画面上也可读
+            .ignoresSafeArea()
             LinearGradient(
                 colors: [
-                    Color.black.opacity(colorScheme == .dark ? 0.45 : 0.25),
+                    palette.background.opacity(0.98),
                     Color.clear,
                 ],
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .frame(height: 160)
+            .frame(height: 118)
             .frame(maxHeight: .infinity, alignment: .top)
+            .ignoresSafeArea()
         }
+        .allowsHitTesting(false)
     }
 
-    /// 下拉过滚时顶部锚定屏幕、整体拉高，封面随之放大 —— 与首页 banner 同一套，
-    /// 顶部不会因为 ScrollView 弹性而露出空隙。静止时 hero 顶边即全局 y=0。
-    @ViewBuilder
-    private func stretchyHero(viewportSize: CGSize) -> some View {
-        let baseHeight = heroHeight(for: viewportSize)
-        GeometryReader { geo in
-            let stretch = max(0, geo.frame(in: .global).minY)
-            hero(viewportSize: viewportSize, height: baseHeight + stretch)
-                .background(alignment: .top) {
-                    detailBackdrop(viewportSize: viewportSize)
-                }
-                .offset(y: -stretch)
-        }
-        .frame(height: baseHeight)
+    private var backgroundCoverFeather: some View {
+        Rectangle()
+            .mask {
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0.0),
+                        .init(color: .black, location: 0.18),
+                        .init(color: .black, location: 1.0),
+                    ],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            }
+            .mask {
+                LinearGradient(
+                    stops: [
+                        .init(color: .black, location: 0.0),
+                        .init(color: .black, location: 0.76),
+                        .init(color: .clear, location: 1.0),
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
     }
 
     @ViewBuilder
-    private func hero(viewportSize: CGSize, height: CGFloat) -> some View {
+    private func hero(viewportSize: CGSize) -> some View {
         let isWide = viewportSize.width >= 760
-        // 封面已经是整幅 backdrop，不再叠一张海报卡；文案直接压在渐变收口上。
-        heroCopy(titleSize: isWide ? 44 : 34)
-            .frame(maxWidth: isWide ? 760 : .infinity, alignment: .leading)
-            .padding(.top, isWide ? 94 : 116)
-            .padding(.horizontal, horizontalPadding(for: viewportSize.width))
-            .padding(.bottom, 28)
-            .frame(maxWidth: .infinity, minHeight: height, alignment: .bottomLeading)
+        Group {
+            if isWide {
+                HStack(alignment: .bottom, spacing: 30) {
+                    poster
+                    heroCopy(titleSize: 44)
+                        .frame(maxWidth: 720, alignment: .leading)
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 22) {
+                    poster
+                    heroCopy(titleSize: 32)
+                }
+            }
+        }
+        .padding(.top, isWide ? 94 : 116)
+        .padding(.horizontal, horizontalPadding(for: viewportSize.width))
+        .padding(.bottom, 42)
+        .frame(maxWidth: .infinity, minHeight: heroHeight(for: viewportSize.width), alignment: .bottomLeading)
     }
 
     @ViewBuilder
     private func heroCopy(titleSize: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(model.item.displayName)
-                .font(.system(size: titleSize, weight: .heavy, design: .rounded))
-                .foregroundStyle(palette.textPrimary)
-                .lineLimit(3)
-                .minimumScaleFactor(0.8)
-                .shadow(color: .black.opacity(colorScheme == .dark ? 0.4 : 0), radius: 10, y: 2)
+        VStack(alignment: .leading, spacing: 16) {
             if model.item.name != model.item.displayName {
                 Text(model.item.name)
-                    .font(.subheadline.weight(.medium))
+                    .font(.headline.weight(.semibold))
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(2)
             }
+            Text(model.item.displayName)
+                .font(.system(size: titleSize, weight: .black))
+                .foregroundStyle(palette.textPrimary)
+                .lineLimit(3)
+                .minimumScaleFactor(0.82)
             heroMeta
-            if !model.metaTags.isEmpty {
-                categoryChips
+            if !model.item.summary.isEmpty {
+                Text(model.item.summary)
+                    .font(.callout)
+                    .lineSpacing(4)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             heroActionBar
         }
     }
 
-    /// 一行事实：★评分(人数) · 🔥热度 · 年份 · 话数 · 片长 · Rank
-    ///
-    /// 拼成单个 Text 让它自己流动换行；分隔点前用不换行空格粘住上一段，
-    /// 否则换行时「·」会被甩到行首。
     @ViewBuilder
     private var heroMeta: some View {
-        heroMetaText
-            .font(.subheadline.weight(.bold))
-            .shadow(color: .black.opacity(colorScheme == .dark ? 0.5 : 0), radius: 6, y: 1)
-            .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private var heroMetaText: Text {
-        var segments: [Text] = []
-
-        if model.item.ratingScore > 0 {
-            var rating = Text(Image(systemName: "star.fill")).foregroundColor(.yellow)
-                + Text(" ")
-                + Text(String(format: "%.1f", model.item.ratingScore))
-                    .foregroundColor(palette.textPrimary)
-            if model.ratingTotal > 0 {
-                rating = rating + Text(" (\(DetailFormat.grouped(model.ratingTotal)))")
-                    .foregroundColor(palette.textTertiary)
+        WrapLayout(spacing: 10, lineSpacing: 8) {
+            if model.item.ratingScore > 0 {
+                HStack(spacing: 4) {
+                    Label(String(format: "%.1f", model.item.ratingScore), systemImage: "star.fill")
+                        .foregroundStyle(.yellow)
+                    if model.ratingTotal > 0 {
+                        metadataText("(\(model.ratingTotal)人评分)")
+                    }
+                }
             }
-            segments.append(rating)
-        }
-
-        if model.heat > 0 {
-            let icon = model.heatIsTrending ? "flame.fill" : "person.2.fill"
-            segments.append(
-                Text(Image(systemName: icon)).foregroundColor(.orange)
-                    + Text(" ")
-                    + Text(DetailFormat.heat(model.heat)).foregroundColor(palette.textPrimary)
-            )
-        }
-
-        if !heroFacts.isEmpty {
-            segments.append(
-                Text(heroFacts.joined(separator: " · ")).foregroundColor(palette.textSecondary)
-            )
-        }
-
-        guard var combined = segments.first else { return Text("") }
-        for segment in segments.dropFirst() {
-            combined = combined
-                + Text("\u{00A0}·").foregroundColor(palette.textTertiary)
-                + Text(" ")
-                + segment
-        }
-        return combined
-    }
-
-    private var heroFacts: [String] {
-        var facts: [String] = []
-        if let year = HomeHeroBannerLayout.yearString(from: model.airDate) {
-            facts.append(year)
-        }
-        if model.episodeCount > 0 {
-            facts.append("\(model.episodeCount) 话")
-        }
-        if !model.episodeDuration.isEmpty {
-            facts.append(model.episodeDuration)
-        }
-        if model.item.rank > 0 {
-            facts.append("Rank #\(model.item.rank)")
-        }
-        return facts
-    }
-
-    /// 官方分类标签（TV / 日本 / 漫画改），无边框弱化处理。
-    @ViewBuilder
-    private var categoryChips: some View {
-        WrapLayout(spacing: 8, lineSpacing: 8) {
-            ForEach(model.metaTags.prefix(6), id: \.self) { tag in
-                Text(tag)
-                    .font(.caption.weight(.semibold))
+            if !model.airDate.isEmpty {
+                Label(model.airDate, systemImage: "calendar")
                     .foregroundStyle(palette.textSecondary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(palette.textPrimary.opacity(0.08), in: Capsule(style: .continuous))
+            }
+            if model.item.rank > 0 {
+                metadataText("Rank #\(model.item.rank)")
+            }
+            if !model.platform.isEmpty {
+                metadataText(model.platform)
+            }
+            if model.eps > 0 {
+                metadataText("\(model.eps)话")
+            }
+            if !model.episodeDuration.isEmpty {
+                metadataText(model.episodeDuration)
             }
         }
+        .font(.subheadline.weight(.bold))
     }
 
     @ViewBuilder
@@ -1081,7 +320,7 @@ public struct DetailView: View {
                     .fill(
                         LinearGradient(
                             colors: [
-                                model.coverPalette.lifted.color.opacity(0.80),
+                                model.backdropColor.opacity(0.80),
                                 palette.backgroundRaised,
                                 palette.background,
                             ],
@@ -1091,6 +330,34 @@ public struct DetailView: View {
                     )
             }
         }
+    }
+
+    @ViewBuilder
+    private var poster: some View {
+        let url = URL(string: model.item.images.best)
+        AsyncImage(url: url, transaction: Transaction(animation: .easeInOut(duration: 0.2))) { phase in
+            switch phase {
+            case .success(let image):
+                image
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            default:
+                Rectangle()
+                    .fill(palette.surfaceRaised)
+                    .overlay {
+                        Image(systemName: "tv")
+                            .font(.system(size: 32, weight: .light))
+                            .foregroundStyle(palette.textTertiary)
+                    }
+            }
+        }
+        .frame(width: 170, height: 238)
+        .clipShape(RoundedRectangle(cornerRadius: RegularDetailStyle.cornerRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: RegularDetailStyle.cornerRadius, style: .continuous)
+                .strokeBorder(palette.hairline, lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.55), radius: 26, y: 16)
     }
 
     @ViewBuilder
@@ -1112,7 +379,7 @@ public struct DetailView: View {
                     .padding(.horizontal, 18)
                     .background(
                         CezzuMonochrome.fill(for: colorScheme),
-                        in: RoundedRectangle(cornerRadius: DetailStyle.cornerRadius, style: .continuous)
+                        in: RoundedRectangle(cornerRadius: RegularDetailStyle.cornerRadius, style: .continuous)
                     )
                 }
                 .buttonStyle(.plain)
@@ -1167,11 +434,20 @@ public struct DetailView: View {
                 .lineLimit(1)
         }
         .font(.caption.weight(.bold))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            palette.surface.opacity(0.78),
+            in: RoundedRectangle(cornerRadius: RegularDetailStyle.cornerRadius, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: RegularDetailStyle.cornerRadius, style: .continuous)
+                .stroke(palette.hairline, lineWidth: 1)
+        }
     }
 
-    /// 与首页 banner 一致的观感：封面占视口一大半，文案压在底部渐变上。
-    private func heroHeight(for viewportSize: CGSize) -> CGFloat {
-        max(viewportSize.height * (viewportSize.width >= 760 ? 0.62 : 0.66), 460)
+    private func heroHeight(for width: CGFloat) -> CGFloat {
+        width >= 760 ? 560 : 650
     }
 
     private func horizontalPadding(for width: CGFloat) -> CGFloat {
@@ -1237,7 +513,7 @@ public struct DetailView: View {
     @ViewBuilder
     private func tabBarTrack(scrolling: Bool) -> some View {
         let tabs = HStack(spacing: 4) {
-            ForEach(DetailTab.tabBarCases, id: \.self) { tab in
+            ForEach(DetailTab.allCases, id: \.self) { tab in
                 tabBarItem(tab)
             }
         }
@@ -1320,8 +596,7 @@ public struct DetailView: View {
                 case .overview:
                     overviewContent
                 case .comments:
-                    // 吐槽已挪到概览底部，tab 栏不再有这一项
-                    overviewContent
+                    commentsContent
                 case .characters:
                     charactersContent
                 case .reviews:
@@ -1340,18 +615,12 @@ public struct DetailView: View {
     @ViewBuilder
     private var overviewContent: some View {
         VStack(alignment: .leading, spacing: 36) {
-            if !model.tags.isEmpty {
-                contentModule(eyebrow: "TAGS", title: "标签") {
-                    tagCloud
-                }
-            }
-
             watchModule
 
-            if !model.summary.isEmpty {
+            if !model.item.summary.isEmpty {
                 contentModule(eyebrow: "ABOUT", title: "简介") {
                     ExpandableSummary(
-                        text: model.summary,
+                        text: model.item.summary,
                         collapsedLineLimit: 5,
                         textColor: palette.textSecondary,
                         accentColor: palette.textPrimary
@@ -1359,91 +628,9 @@ public struct DetailView: View {
                 }
             }
 
-            if let collection = model.collection, collection.total > 0 {
-                contentModule(eyebrow: "COLLECTION", title: "收藏") {
-                    collectionStats(collection)
-                }
-            }
-
-            if !model.factRows.isEmpty {
-                contentModule(eyebrow: "INFO", title: "资料") {
-                    factList
-                }
-            }
-
-            // 吐槽不再占一个 tab，常驻概览最下方
-            contentModule(eyebrow: "COMMENTS", title: "吐槽") {
-                overviewComments
-            }
-            .task { await model.loadCommentsIfNeeded() }
-        }
-    }
-
-    @ViewBuilder
-    private var overviewComments: some View {
-        if model.loadingTabs.contains(.comments) && model.comments.isEmpty {
-            HStack(spacing: 10) {
-                ProgressView().controlSize(.small)
-                Text("正在获取短评…")
-                    .font(.subheadline)
-                    .foregroundStyle(palette.textTertiary)
-            }
-        } else if let error = model.tabErrors[.comments], model.comments.isEmpty {
-            contentInlineHint(error)
-        } else if model.comments.isEmpty {
-            contentInlineHint("这部作品还没有短评。")
-        } else {
-            commentList
-        }
-    }
-
-    /// 收藏分布：在看 / 想看 / 看过 / 搁置 / 抛弃。
-    @ViewBuilder
-    private func collectionStats(_ collection: BangumiCollection) -> some View {
-        let entries: [(String, Int)] = [
-            ("在看", collection.doing),
-            ("想看", collection.wish),
-            ("看过", collection.collect),
-            ("搁置", collection.onHold),
-            ("抛弃", collection.dropped),
-        ].filter { $0.1 > 0 }
-
-        WrapLayout(spacing: 28, lineSpacing: 16) {
-            ForEach(entries, id: \.0) { label, count in
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(DetailFormat.grouped(count))
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(palette.textPrimary)
-                    Text(label)
-                        .font(.caption)
-                        .foregroundStyle(palette.textTertiary)
-                }
-            }
-        }
-    }
-
-    /// 资料表：左标签右值，靠细分隔线分行，不用卡片。
-    @ViewBuilder
-    private var factList: some View {
-        VStack(spacing: 0) {
-            ForEach(Array(model.factRows.enumerated()), id: \.offset) { index, row in
-                HStack(alignment: .top, spacing: 16) {
-                    Text(row.0)
-                        .font(.subheadline)
-                        .foregroundStyle(palette.textTertiary)
-                        .frame(width: 76, alignment: .leading)
-                    Text(row.1)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(palette.textPrimary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 0)
-                }
-                .padding(.vertical, 11)
-
-                if index < model.factRows.count - 1 {
-                    Rectangle()
-                        .fill(palette.hairline)
-                        .frame(height: 1)
+            if !model.tags.isEmpty {
+                contentModule(eyebrow: "TAGS", title: "标签") {
+                    tagCloud
                 }
             }
         }
@@ -1453,14 +640,23 @@ public struct DetailView: View {
     private var watchModule: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .firstTextBaseline) {
-                Text("选集播放")
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(palette.textPrimary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("WATCH")
+                        .font(.caption.weight(.semibold))
+                        .tracking(1.2)
+                        .foregroundStyle(palette.textTertiary)
+                    Text("选集播放")
+                        .font(.title2.weight(.bold))
+                        .foregroundStyle(palette.textPrimary)
+                }
                 Spacer(minLength: 12)
                 if !model.currentEpisodes.isEmpty {
                     Text("\(model.currentEpisodes.count) 集")
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(palette.textTertiary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(palette.surfaceRaised, in: Capsule(style: .continuous))
                 }
             }
 
@@ -1468,7 +664,17 @@ public struct DetailView: View {
                 sourceRail
                 episodesContent
             }
+            .padding(18)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                RoundedRectangle(cornerRadius: DetailContentStyle.moduleRadius, style: .continuous)
+                    .fill(palette.surface.opacity(colorScheme == .dark ? 0.72 : 0.88))
+            }
+            .clipShape(RoundedRectangle(cornerRadius: DetailContentStyle.moduleRadius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: DetailContentStyle.moduleRadius, style: .continuous)
+                    .strokeBorder(palette.hairline, lineWidth: 1)
+            }
         }
     }
 
@@ -1685,7 +891,7 @@ public struct DetailView: View {
 
     @ViewBuilder
     private func episodeCell(episode: Episode, index: Int, isResume: Bool) -> some View {
-        VStack(spacing: 2) {
+        VStack(spacing: 6) {
             Text(episodeNumberLabel(for: episode, fallbackIndex: index))
                 .font(.caption2.weight(.bold))
                 .foregroundStyle(isResume ? CezzuMonochrome.fill(for: colorScheme) : palette.textTertiary)
@@ -1694,12 +900,12 @@ public struct DetailView: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(palette.textPrimary)
                 .multilineTextAlignment(.center)
-                .lineLimit(1)
+                .lineLimit(2)
                 .frame(maxWidth: .infinity)
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 7)
-        .frame(maxWidth: .infinity, minHeight: 46)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, minHeight: 72)
         .background {
             RoundedRectangle(cornerRadius: DetailContentStyle.chipRadius, style: .continuous)
                 .fill(
@@ -1737,22 +943,31 @@ public struct DetailView: View {
 
     @ViewBuilder
     private var tagCloud: some View {
-        // 紧凑排布：去掉描边与计数，缩小内边距，让标签成块而不是散落
-        WrapLayout(spacing: 6, lineSpacing: 6) {
-            ForEach(model.tags.prefix(DetailContentStyle.maxTagChips), id: \.name) { tag in
+        WrapLayout(spacing: 8, lineSpacing: 8) {
+            ForEach(model.tags, id: \.name) { tag in
                 Button {
                     onTapTag(tag.name)
                 } label: {
-                    Text(tag.name)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(palette.textSecondary)
-                        .lineLimit(1)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 4)
-                        .background {
-                            Capsule(style: .continuous)
-                                .fill(palette.textPrimary.opacity(0.09))
+                    HStack(spacing: 5) {
+                        Text(tag.name)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(palette.textSecondary)
+                        if tag.count > 0 {
+                            Text("\(tag.count)")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(palette.textTertiary)
                         }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background {
+                        Capsule(style: .continuous)
+                            .fill(palette.surfaceRaised.opacity(0.9))
+                    }
+                    .overlay {
+                        Capsule(style: .continuous)
+                            .strokeBorder(palette.hairline.opacity(0.7), lineWidth: 1)
+                    }
                 }
                 .buttonStyle(.plain)
             }
@@ -1762,10 +977,17 @@ public struct DetailView: View {
     // MARK: Social tabs
 
     @ViewBuilder
-    private var commentList: some View {
-        LazyVStack(spacing: 0) {
+    private var commentsContent: some View {
+        if model.comments.isEmpty {
+            contentStatus(
+                systemImage: "text.bubble",
+                title: "暂无吐槽",
+                message: "这部作品还没有短评。"
+            )
+        } else {
+            LazyVStack(spacing: 12) {
                 ForEach(model.comments) { comment in
-                    flatRow {
+                    glassCard {
                         HStack(alignment: .top, spacing: 14) {
                             circularAvatar(url: comment.avatarURL, title: comment.authorName, size: 40)
                             VStack(alignment: .leading, spacing: 8) {
@@ -1801,6 +1023,7 @@ public struct DetailView: View {
                         }
                     }
                 }
+            }
         }
     }
 
@@ -1996,9 +1219,9 @@ public struct DetailView: View {
                 message: "还没有长评。"
             )
         } else {
-            LazyVStack(spacing: 0) {
+            LazyVStack(spacing: 12) {
                 ForEach(model.reviews) { review in
-                    flatRow {
+                    glassCard {
                         VStack(alignment: .leading, spacing: 12) {
                             HStack(alignment: .top, spacing: 12) {
                                 circularAvatar(url: review.avatarURL, title: review.authorName, size: 36)
@@ -2048,9 +1271,9 @@ public struct DetailView: View {
                 message: "还没有 staff 资料。"
             )
         } else {
-            LazyVStack(spacing: 0) {
+            LazyVStack(spacing: 10) {
                 ForEach(model.staff) { person in
-                    flatRow {
+                    glassCard(padding: 14) {
                         HStack(spacing: 14) {
                             squareAvatar(url: URL(string: person.images.best), title: person.name, size: 52)
                             VStack(alignment: .leading, spacing: 4) {
@@ -2088,7 +1311,6 @@ public struct DetailView: View {
 
     // MARK: Content chrome
 
-    /// 分区标题 + 内容直接落在背景上（无卡片、无描边），与首页分区一致。
     @ViewBuilder
     private func contentModule<Content: View>(
         eyebrow: String,
@@ -2096,25 +1318,35 @@ public struct DetailView: View {
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(title)
-                .font(.title3.weight(.bold))
-                .foregroundStyle(palette.textPrimary)
-            content()
-                .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(eyebrow)
+                    .font(.caption.weight(.semibold))
+                    .tracking(1.2)
+                    .foregroundStyle(palette.textTertiary)
+                Text(title)
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(palette.textPrimary)
+            }
+            glassCard(content: content)
         }
     }
 
-    /// 列表行：无卡片，靠细分隔线断行。
     @ViewBuilder
-    private func flatRow<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        VStack(spacing: 0) {
-            content()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 16)
-            Rectangle()
-                .fill(palette.hairline)
-                .frame(height: 1)
-        }
+    private func glassCard<Content: View>(
+        padding: CGFloat = 18,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        content()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(padding)
+            .background {
+                RoundedRectangle(cornerRadius: DetailContentStyle.moduleRadius, style: .continuous)
+                    .fill(palette.surface.opacity(colorScheme == .dark ? 0.72 : 0.88))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: DetailContentStyle.moduleRadius, style: .continuous)
+                    .strokeBorder(palette.hairline, lineWidth: 1)
+            }
     }
 
     @ViewBuilder
@@ -2124,22 +1356,24 @@ public struct DetailView: View {
         message: String,
         @ViewBuilder accessory: () -> Accessory = { EmptyView() }
     ) -> some View {
-        VStack(spacing: 12) {
-            Image(systemName: systemImage)
-                .font(.system(size: 28, weight: .light))
-                .foregroundStyle(palette.textTertiary)
-                .symbolRenderingMode(.hierarchical)
-            Text(title)
-                .font(.headline.weight(.semibold))
-                .foregroundStyle(palette.textPrimary)
-            Text(message)
-                .font(.subheadline)
-                .foregroundStyle(palette.textTertiary)
-                .multilineTextAlignment(.center)
-            accessory()
+        glassCard {
+            VStack(spacing: 12) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 28, weight: .light))
+                    .foregroundStyle(palette.textTertiary)
+                    .symbolRenderingMode(.hierarchical)
+                Text(title)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(palette.textPrimary)
+                Text(message)
+                    .font(.subheadline)
+                    .foregroundStyle(palette.textTertiary)
+                    .multilineTextAlignment(.center)
+                accessory()
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 20)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 32)
     }
 
     @ViewBuilder
@@ -2199,39 +1433,10 @@ public struct DetailView: View {
     }
 }
 
-/// 详情页的纯格式化逻辑，独立出来方便测。
-enum DetailFormat {
-    /// 热度 / 收藏人数：过万折成「1.2万」，过千折成「9.9k」。
-    static func heat(_ value: Int) -> String {
-        if value >= 10000 {
-            return String(format: "%.1f万", Double(value) / 10000)
-        }
-        if value >= 1000 {
-            return String(format: "%.1fk", Double(value) / 1000)
-        }
-        return String(value)
-    }
-
-    /// 千分位，用于收藏分布这类需要精确数字的地方。
-    static func grouped(_ value: Int) -> String {
-        let digits = String(abs(value))
-        var out: [Character] = []
-        for (offset, char) in digits.reversed().enumerated() {
-            if offset > 0, offset % 3 == 0 { out.append(",") }
-            out.append(char)
-        }
-        return (value < 0 ? "-" : "") + String(out.reversed())
-    }
-}
-
 private enum DetailContentStyle {
     static let moduleRadius: CGFloat = 22
-    static let chipRadius: CGFloat = 12
+    static let chipRadius: CGFloat = 14
     static let episodeMin: CGFloat = 88
-    /// 标签云上限 —— Bangumi 有些条目挂了 40+ 个标签，全铺会占掉大半屏。
-    static let maxTagChips: Int = 18
-    /// 底部回光的高度，只笼罩 dock 一带；hero 的收口不会滚进来，因此不会露边。
-    static let dockGlowHeight: CGFloat = 190
     /// regular 宽度下角色宫格单卡最小 / 最大宽度（compact 固定 3 列，不走 adaptive）。
     static let characterMin: CGFloat = 110
     static let characterMax: CGFloat = 160
