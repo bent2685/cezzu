@@ -1,6 +1,8 @@
 import Foundation
 import Metal
+#if canImport(MetalFX)
 import MetalFX
+#endif
 
 /// 播放器实时超分辨率档位。
 ///
@@ -9,7 +11,7 @@ import MetalFX
 /// - `.efficiency`：基于 Core Image / Metal 的低成本上采样（Lanczos）。
 /// - `.quality`：MetalFX `MTLFXSpatialScaler`，画质最佳但 GPU 占用高。
 ///
-/// 注意：`.quality` 不可用时（旧设备 / 模拟器没有 Metal 支持），UI 应自动降级为 `.efficiency` 提示。
+/// 注意：`.quality` 不可用时（模拟器 / 旧设备没有 MetalFX），UI 应自动降级为 `.efficiency` 提示。
 public enum SuperResolutionMode: String, CaseIterable, Sendable, Codable {
     case off
     case efficiency
@@ -43,6 +45,15 @@ public enum SuperResolutionCapability {
     /// 系统提供的默认 Metal 设备。`nil` 表示当前进程没有可用 GPU（极少数 CI / 模拟器场景）。
     public static var defaultDevice: MTLDevice? {
         MTLCreateSystemDefaultDevice()
+    }
+
+    /// 进程是否能 import / link MetalFX（模拟器 SDK 通常没有这个模块）。
+    public static var isMetalFXModuleAvailable: Bool {
+        #if canImport(MetalFX)
+        true
+        #else
+        false
+        #endif
     }
 
     /// 给定 device 是否支持指定模式。
@@ -79,7 +90,11 @@ public enum SuperResolutionCapability {
     }
 
     private static func supportsMetalFXSpatial(on device: MTLDevice?) -> Bool {
+        #if canImport(MetalFX)
         guard let device else { return false }
         return MTLFXSpatialScalerDescriptor.supportsDevice(device)
+        #else
+        return false
+        #endif
     }
 }

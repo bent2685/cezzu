@@ -36,6 +36,8 @@ let package = Package(
                 .swiftLanguageMode(.v6),
                 .enableExperimentalFeature("StrictConcurrency"),
             ]
+            // MetalFX：模拟器 SDK 通常没有该模块。源码用 `#if canImport(MetalFX)` 兜底；
+            // 真机编译时由 `import MetalFX` 自动链接，不要在此强制 link（会搞挂 simulator）。
         ),
         .executableTarget(
             name: "CezzuMac",

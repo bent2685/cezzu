@@ -2,14 +2,16 @@ import CoreImage
 import CoreVideo
 import Foundation
 import Metal
-import MetalFX
 import simd
+#if canImport(MetalFX)
+import MetalFX
+#endif
 
 /// 单帧 GPU 上采样器接口。
 ///
 /// 实现按 `SuperResolutionMode` 切换：
 /// - `.efficiency` → `LanczosVideoSuperResolutionScaler`（Core Image / Metal Performance Shaders）
-/// - `.quality` → `MetalFXVideoSuperResolutionScaler`（`MTLFXSpatialScaler`）
+/// - `.quality` → `MetalFXVideoSuperResolutionScaler`（`MTLFXSpatialScaler`，需 MetalFX；模拟器不可用）
 /// - `.off` → 永远不会用到，因为 pipeline 在 off 时会被旁路。
 public protocol VideoSuperResolutionScaler: AnyObject {
     /// 把 input 输入纹理放大到 output 输出纹理。两者由 pipeline 自己分配，scaler 不持有所有权。
@@ -21,6 +23,7 @@ public protocol VideoSuperResolutionScaler: AnyObject {
     ) -> Bool
 }
 
+#if canImport(MetalFX)
 /// MetalFX 质量档：`MTLFXSpatialScaler`。
 ///
 /// MetalFX 的 spatial scaler 是 stateless 的，只要输入/输出尺寸不变就可以复用。
@@ -68,6 +71,7 @@ public final class MetalFXVideoSuperResolutionScaler: VideoSuperResolutionScaler
         return true
     }
 }
+#endif
 
 /// 效率档：Core Image 的 Lanczos 上采样。
 ///
@@ -135,6 +139,7 @@ public enum VideoSuperResolutionScalerFactory {
         case .efficiency:
             return LanczosVideoSuperResolutionScaler(device: device)
         case .quality:
+            #if canImport(MetalFX)
             return MetalFXVideoSuperResolutionScaler(
                 device: device,
                 inputWidth: inputWidth,
@@ -142,6 +147,10 @@ public enum VideoSuperResolutionScalerFactory {
                 outputWidth: outputWidth,
                 outputHeight: outputHeight
             )
+            #else
+            // 模拟器 / 无 MetalFX SDK：质量档降级为 Lanczos，避免编译失败。
+            return LanczosVideoSuperResolutionScaler(device: device)
+            #endif
         }
     }
 }

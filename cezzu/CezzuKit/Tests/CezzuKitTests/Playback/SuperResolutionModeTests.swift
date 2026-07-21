@@ -35,6 +35,14 @@ struct SuperResolutionModeTests {
         #expect(SuperResolutionCapability.isSupported(.quality, on: nil) == false)
     }
 
+    @Test("quality mode is unavailable when MetalFX module is missing (e.g. simulator)")
+    func qualityUnavailableWithoutMetalFXModule() {
+        if !SuperResolutionCapability.isMetalFXModuleAvailable {
+            #expect(SuperResolutionCapability.isSupported(.quality, on: MTLCreateSystemDefaultDevice()) == false)
+            #expect(SuperResolutionCapability.resolved(.quality, on: MTLCreateSystemDefaultDevice()) != .quality)
+        }
+    }
+
     @Test("resolved degrades gracefully when device is absent")
     func resolvedNoDevice() {
         #expect(SuperResolutionCapability.resolved(.quality, on: nil) == .off)
