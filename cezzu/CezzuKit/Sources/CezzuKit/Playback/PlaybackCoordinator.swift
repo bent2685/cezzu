@@ -42,7 +42,7 @@ public final class PlaybackCoordinator {
     }
 
     public func startPlayback(_ request: PlaybackRequest, resume: Bool) async {
-        flushProgress()
+        await flushProgress()
         backend.unload()
         await proxy.stop()
 
@@ -105,7 +105,7 @@ public final class PlaybackCoordinator {
     public func pause() {
         backend.pause()
         phase = .paused
-        flushProgress()
+        Task { await flushProgress() }
     }
 
     public func resume() {
@@ -114,7 +114,8 @@ public final class PlaybackCoordinator {
     }
 
     public func stop() async {
-        flushProgress()
+        // 必须在 dispose 前截帧 + 写进度。
+        await flushProgress()
         backend.dispose()
         await proxy.stop()
         extractionTask?.cancel()
@@ -143,10 +144,29 @@ public final class PlaybackCoordinator {
         }
     }
 
-    private func flushProgress() {
+    /// 把进度（以及尽量一帧当前画面）写进 HistoryStore。
+    /// 按番剧标题合并，换源不会多插一行。
+    private func flushProgress() async {
         guard let request = currentRequest, let history else { return }
         let positionMs = Int(backend.currentTime * 1000)
-        try? history.updateProgress(detailURL: request.anime.detailURL, positionMs: positionMs)
+
+        var coverURLString: String?
+        // 进度太靠前时画面常是黑场 / 片头，跳过截帧。
+        if positionMs >= 1_000, let cgImage = await backend.captureCurrentFrame() {
+            let identity = HistoryStore.identityKey(
+                title: HistoryStore.bangumiTitle(for: request),
+                detailURL: request.anime.detailURL.absoluteString
+            )
+            if let fileURL = try? HistoryFrameCache.save(image: cgImage, identity: identity) {
+                coverURLString = fileURL.absoluteString
+            }
+        }
+
+        try? history.updateProgress(
+            request: request,
+            positionMs: positionMs,
+            coverURLString: coverURLString
+        )
     }
 
     private func makeHeaders(for rule: CezzuRule) -> [String: String] {

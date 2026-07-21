@@ -6,12 +6,15 @@ import SwiftData
 @MainActor
 @Observable
 public final class FollowStore {
+    /// 强引用 container，避免 empty→persistent 切换后 context 悬空主线程闪退。
+    private let container: ModelContainer
     private let context: ModelContext
 
     /// 最近添加 / 更新在前，用于追番列表。
     public private(set) var items: [BangumiItem] = []
 
     public init(context: ModelContext) {
+        self.container = context.container
         self.context = context
         try? refresh()
     }

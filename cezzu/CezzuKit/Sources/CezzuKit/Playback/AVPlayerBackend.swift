@@ -216,4 +216,26 @@ public final class AVPlayerBackend: VideoPlayerBackend {
         player.replaceCurrentItem(with: nil)
         resetDownloadSpeed()
     }
+
+    /// 截取当前播放位置附近的一帧，作「最近观看」封面。
+    /// HLS / 反代流上 generator 可能失败，调用方应把 `nil` 当无封面处理。
+    public func captureCurrentFrame() async -> CGImage? {
+        guard let asset = player.currentItem?.asset else { return nil }
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: 640, height: 360)
+        // 放宽容差：流媒体关键帧不保证精确落在 currentTime。
+        generator.requestedTimeToleranceBefore = CMTime(seconds: 1, preferredTimescale: 600)
+        generator.requestedTimeToleranceAfter = CMTime(seconds: 1, preferredTimescale: 600)
+
+        let time = player.currentTime()
+        guard time.isValid, time.isNumeric, !time.seconds.isNaN else { return nil }
+
+        do {
+            let result = try await generator.image(at: time)
+            return result.image
+        } catch {
+            return nil
+        }
+    }
 }

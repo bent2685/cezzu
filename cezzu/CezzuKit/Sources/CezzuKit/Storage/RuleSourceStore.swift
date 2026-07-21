@@ -53,9 +53,12 @@ public final class RuleSourceRecord {
 /// 规则源的高层 store —— 在 MainActor 上跑（SwiftData ModelContext 不是 Sendable）。
 @MainActor
 public final class RuleSourceStore {
+    /// 强引用 container，避免 empty→persistent 切换后 context 悬空主线程闪退。
+    private let container: ModelContainer
     private let context: ModelContext
 
     public init(context: ModelContext) {
+        self.container = context.container
         self.context = context
     }
 

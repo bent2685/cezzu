@@ -873,10 +873,14 @@ public struct PlayerView: View {
     }
 
     private func close() {
-        if let onClose {
-            onClose()
-        } else {
-            dismiss()
+        // 先落盘当前帧，再关页；避免只依赖 onDisappear 时进度还没写完 UI 已刷新。
+        Task { @MainActor in
+            await coordinator.stop()
+            if let onClose {
+                onClose()
+            } else {
+                dismiss()
+            }
         }
     }
 

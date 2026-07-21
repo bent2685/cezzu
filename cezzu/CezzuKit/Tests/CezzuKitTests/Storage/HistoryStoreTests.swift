@@ -23,11 +23,70 @@ struct HistoryStoreTests {
         return HistoryStore(context: container.mainContext)
     }
 
-    private func makeRequest() -> PlaybackRequest {
+    @Test("recordPlaybackStart inserts an entry")
+    func recordStart() throws {
+        let store = try makeStore()
+        try store.recordPlaybackStart(request: makeRequest())
+        #expect(store.recent.count == 1)
+        #expect(store.recent.first?.bangumiTitle == "孤独摇滚")
+        #expect(store.recent.first?.lastPositionMs == 0)
+    }
+
+    @Test("updateProgress moves the position")
+    func updateProgress() throws {
+        let store = try makeStore()
+        try store.recordPlaybackStart(request: makeRequest())
+        let url = URL(string: "https://example.com/anime/1")!
+        try store.updateProgress(detailURL: url, positionMs: 754_000)
+        let entry = try store.entry(forDetailURL: url)
+        #expect(entry?.lastPositionMs == 754_000)
+    }
+
+    @Test("same bangumi from different sources collapses to one history row")
+    func sameBangumiDifferentSourcesCollapse() throws {
+        let store = try makeStore()
+        let base = makeRequest(ruleName: "xfdmneo", detailPath: "xfdm/1")
+        try store.recordPlaybackStart(request: base)
+        try store.recordPlaybackStart(request: makeRequest(ruleName: "TvTFun", detailPath: "tvt/1"))
+        try store.recordPlaybackStart(request: makeRequest(ruleName: "baimao", detailPath: "bai/1"))
+
+        #expect(store.recent.count == 1)
+        #expect(store.recent.first?.bangumiTitle == "孤独摇滚")
+        #expect(store.recent.first?.ruleName == "baimao")
+        #expect(store.recent.first?.detailURLString == "https://example.com/bai/1")
+    }
+
+    @Test("updateProgress by request merges title identity and can set frame cover")
+    func updateProgressByRequestSetsCover() throws {
+        let store = try makeStore()
+        let request = makeRequest(ruleName: "demo", detailPath: "anime/1")
+        try store.recordPlaybackStart(request: request)
+        try store.updateProgress(
+            request: request,
+            positionMs: 16_000,
+            coverURLString: "file:///tmp/frame.jpg"
+        )
+        #expect(store.recent.count == 1)
+        #expect(store.recent.first?.lastPositionMs == 16_000)
+        #expect(store.recent.first?.coverURLString == "file:///tmp/frame.jpg")
+    }
+
+    @Test("clearAll empties the list")
+    func clearAll() throws {
+        let store = try makeStore()
+        try store.recordPlaybackStart(request: makeRequest())
+        try store.clearAll()
+        #expect(store.recent.isEmpty)
+    }
+
+    private func makeRequest(
+        ruleName: String = "demo",
+        detailPath: String = "anime/1"
+    ) -> PlaybackRequest {
         let rule = CezzuRule(
             api: "1",
             type: "anime",
-            name: "demo",
+            name: ruleName,
             version: "1.0",
             muliSources: false,
             useWebview: true,
@@ -50,37 +109,10 @@ struct HistoryStoreTests {
         )
         let detail = AnimeDetail(
             title: "孤独摇滚",
-            detailURL: URL(string: "https://example.com/anime/1")!,
-            ruleName: "demo",
+            detailURL: URL(string: "https://example.com/\(detailPath)")!,
+            ruleName: ruleName,
             roads: [road]
         )
         return PlaybackRequest(anime: detail, roadIndex: 0, episodeIndex: 0, rule: rule)
-    }
-
-    @Test("recordPlaybackStart inserts an entry")
-    func recordStart() throws {
-        let store = try makeStore()
-        try store.recordPlaybackStart(request: makeRequest())
-        #expect(store.recent.count == 1)
-        #expect(store.recent.first?.bangumiTitle == "孤独摇滚")
-        #expect(store.recent.first?.lastPositionMs == 0)
-    }
-
-    @Test("updateProgress moves the position")
-    func updateProgress() throws {
-        let store = try makeStore()
-        try store.recordPlaybackStart(request: makeRequest())
-        let url = URL(string: "https://example.com/anime/1")!
-        try store.updateProgress(detailURL: url, positionMs: 754_000)
-        let entry = try store.entry(forDetailURL: url)
-        #expect(entry?.lastPositionMs == 754_000)
-    }
-
-    @Test("clearAll empties the list")
-    func clearAll() throws {
-        let store = try makeStore()
-        try store.recordPlaybackStart(request: makeRequest())
-        try store.clearAll()
-        #expect(store.recent.isEmpty)
     }
 }
