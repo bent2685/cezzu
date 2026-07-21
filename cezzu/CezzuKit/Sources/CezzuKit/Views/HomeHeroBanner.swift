@@ -1,5 +1,12 @@
 import SwiftUI
 
+/// 按压不做任何视觉反馈，保持 banner 沉浸感（系统 .plain 会整块压暗）。
+private struct HeroBannerButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+    }
+}
+
 enum HomeHeroBannerLayout {
     /// Banner 总高占视口高度比例（含状态栏区域）。
     static let viewportHeightRatio: CGFloat = 0.56
@@ -203,7 +210,7 @@ public struct HomeHeroBanner: View {
             .frame(height: totalHeight)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(HeroBannerButtonStyle())
         .allowsHitTesting(interactive)
     }
 
