@@ -872,19 +872,22 @@ public struct DetailView: View {
             .allowsHitTesting(false)
     }
 
-    /// 整页底：实心主色 + 底部 dock 区的封面色回光，让 dock 区不是一块死色，
-    /// 与首页「实心底 + 呼吸光」的处理呼应。
+    /// 整页底：实心主色 + 底部 dock 区的封面色回光，与首页「实心底 + 呼吸光」呼应。
+    ///
+    /// 回光必须锁在底部这一小段里。若让它从页面中部就起效，hero 底部的渐变收口
+    /// （收在纯底色上）和已经带了回光的页面底色会差出几个百分点，交界处露一条线。
     private var pageBackdrop: some View {
-        ZStack {
+        ZStack(alignment: .bottom) {
             palette.background
             LinearGradient(
                 colors: [
                     Color.clear,
-                    model.coverPalette.lifted.color.opacity(colorScheme == .dark ? 0.22 : 0.14),
+                    model.coverPalette.lifted.color.opacity(colorScheme == .dark ? 0.20 : 0.12),
                 ],
-                startPoint: .center,
+                startPoint: .top,
                 endPoint: .bottom
             )
+            .frame(height: DetailContentStyle.dockGlowHeight)
         }
     }
 
@@ -2222,6 +2225,8 @@ private enum DetailContentStyle {
     static let episodeMin: CGFloat = 88
     /// 标签云上限 —— Bangumi 有些条目挂了 40+ 个标签，全铺会占掉大半屏。
     static let maxTagChips: Int = 18
+    /// 底部回光的高度，只笼罩 dock 一带；hero 的收口不会滚进来，因此不会露边。
+    static let dockGlowHeight: CGFloat = 190
     /// regular 宽度下角色宫格单卡最小 / 最大宽度（compact 固定 3 列，不走 adaptive）。
     static let characterMin: CGFloat = 110
     static let characterMax: CGFloat = 160
