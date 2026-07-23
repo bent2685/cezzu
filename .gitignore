@@ -56,3 +56,9 @@ dist/
 
 # ─── 本地密钥 / 凭据 ───
 cezzu/LocalSecrets.xcconfig
+
+# ─── Claude Code ───
+## 全项目 skill 入口统一在 .agents/skills，.claude/skills 只是指向它的软链，需入库；
+## 其余都是本地态（settings.local.json / worktrees）。
+.claude/*
+!.claude/skills
