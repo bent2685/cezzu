@@ -138,7 +138,10 @@ enum HomeHeroBannerLayout {
     }
 }
 
-/// banner 横向分页滚动的内容偏移量（正值 = 已向右滚过的距离）。
+/// 分页滚动的内容偏移量（正值 = 已向右滚过的距离）。
+///
+/// 由每一页各自上报（各页算出来一致）。挂在 HStack `.background` 上的单个
+/// GeometryReader 量不到滚动，具名坐标系在 ScrollView 内容里也解析不到。
 private struct BannerScrollOffsetKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
@@ -191,8 +194,6 @@ public struct HomeHeroBanner: View {
         self.onTapItem = onTapItem
     }
 
-    private static let scrollSpace = "HomeHeroBannerScroll"
-
     private var totalHeight: CGFloat {
         HomeHeroBannerLayout.totalHeight(viewportHeight: viewportHeight, topInset: topInset)
     }
@@ -233,32 +234,39 @@ public struct HomeHeroBanner: View {
     private func carousel(stretch: CGFloat) -> some View {
         GeometryReader { geo in
             let width = max(geo.size.width, 1)
+            let originX = geo.frame(in: .global).minX
             ZStack(alignment: .bottomLeading) {
                 ScrollView(.horizontal) {
                     HStack(spacing: 0) {
                         ForEach(0..<slotCount, id: \.self) { slot in
-                            bannerPage(
-                                item: items[HomeHeroBannerLayout.realIndex(
-                                    slot: slot, itemCount: items.count
-                                )],
-                                progress: CGFloat(slot) - scrollOffset / width,
-                                pageWidth: width,
-                                stretch: stretch
-                            )
-                            .frame(width: width)
+                            GeometryReader { pageGeo in
+                                // 每页自己量到容器左缘的距离：0 = 正在屏幕上，±1 = 左右各一页。
+                                let progress = (pageGeo.frame(in: .global).minX - originX) / width
+                                bannerPage(
+                                    item: items[HomeHeroBannerLayout.realIndex(
+                                        slot: slot, itemCount: items.count
+                                    )],
+                                    progress: progress,
+                                    pageWidth: width,
+                                    stretch: stretch
+                                )
+                                .preference(
+                                    key: BannerScrollOffsetKey.self,
+                                    value: (CGFloat(slot) - progress) * width
+                                )
+                            }
+                            .frame(width: width, height: totalHeight + stretch)
                             .id(slot)
                         }
                     }
                     .scrollTargetLayout()
-                    .background { offsetReader }
+                    .onPreferenceChange(BannerScrollOffsetKey.self) { offset in
+                        scrollOffset = offset
+                    }
                 }
                 .scrollTargetBehavior(.paging)
                 .scrollPosition(id: $scrolledSlot)
                 .scrollIndicators(.hidden)
-                .coordinateSpace(name: Self.scrollSpace)
-                .onPreferenceChange(BannerScrollOffsetKey.self) { offset in
-                    scrollOffset = offset
-                }
                 .onChange(of: dominantRealIndex(pageWidth: width)) { _, dominant in
                     onDominantIndexChange(dominant)
                 }
@@ -312,16 +320,6 @@ public struct HomeHeroBanner: View {
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) { scrolledSlot = target }
-    }
-
-    /// 用 scrollTargetLayout 的背景读内容偏移；`.paging` 不提供连续进度，只能自己量。
-    private var offsetReader: some View {
-        GeometryReader { proxy in
-            Color.clear.preference(
-                key: BannerScrollOffsetKey.self,
-                value: -proxy.frame(in: .named(Self.scrollSpace)).minX
-            )
-        }
     }
 
     @ViewBuilder
