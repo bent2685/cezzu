@@ -82,6 +82,12 @@ enum HomeHeroBannerLayout {
         return max(0, 1 - min(raw, count - raw))
     }
 
+    /// Banner 封面图地址：优先大图，缺失时回落到列表图。
+    static func coverURL(for item: BangumiItem) -> URL? {
+        let raw = item.images.best.isEmpty ? item.images.listBest : item.images.best
+        return URL(string: raw)
+    }
+
     static func contentHeight(viewportHeight: CGFloat) -> CGFloat {
         max(minHeight, viewportHeight * viewportHeightRatio)
     }
@@ -417,22 +423,8 @@ public struct HomeHeroBanner: View {
 
     @ViewBuilder
     private func coverImage(for item: BangumiItem, solid: Color) -> some View {
-        let url = URL(string: item.images.best.isEmpty ? item.images.listBest : item.images.best)
-        AsyncImage(url: url, transaction: Transaction(animation: .easeInOut(duration: 0.45))) { phase in
-            switch phase {
-            case .success(let image):
-                image
-                    .resizable()
-                    .scaledToFill()
-                    .transition(.opacity)
-            case .failure:
-                solid
-            case .empty:
-                solid
-                    .overlay { ProgressView().tint(.white.opacity(0.7)) }
-            @unknown default:
-                solid
-            }
+        RemoteImage(url: HomeHeroBannerLayout.coverURL(for: item)) {
+            solid.overlay { ProgressView().tint(.white.opacity(0.7)) }
         }
     }
 
