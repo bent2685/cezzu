@@ -90,6 +90,7 @@ public final class HomeViewModel {
 
     private let api: BangumiAPIClientProtocol
     private let bannerStore: HomeBannerStore
+    private let paletteStore: BannerPaletteStore
     /// 每个分区的加载世代；取消 / 重入时丢弃过期结果，避免写回错误状态。
     private var sectionGeneration: [String: Int] = [:]
     /// 正在取色的 subject，避免重复下载。
@@ -97,11 +98,14 @@ public final class HomeViewModel {
 
     public init(
         api: BangumiAPIClientProtocol,
-        bannerStore: HomeBannerStore = HomeBannerStore()
+        bannerStore: HomeBannerStore = HomeBannerStore(),
+        paletteStore: BannerPaletteStore = BannerPaletteStore()
     ) {
         self.api = api
         self.bannerStore = bannerStore
-        // 首帧即可用：骨架 + Banner 磁盘缓存，避免空黑屏等 .task
+        self.paletteStore = paletteStore
+        // 首帧即可用：骨架 + Banner 磁盘缓存 + 上次算好的色板，避免空黑屏等 .task
+        bannerPalettes = paletteStore.load()
         ensureSectionsReady()
     }
 
@@ -260,6 +264,7 @@ public final class HomeViewModel {
 
         let palette = await CoverColorExtractor.loadAndExtract(from: url) ?? .fallback
         bannerPalettes[item.id] = palette
+        paletteStore.store(palette, for: item.id)
     }
 
     /// 预热全部 Banner 色板（首张优先已在 `loadInitialIfNeeded` 完成时调用其余）。
