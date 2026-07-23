@@ -15,10 +15,31 @@ enum HomeHeroBannerLayout {
     static let pageBarWidth: CGFloat = 12
     static let pageBarActiveWidth: CGFloat = 24
     static let pageBarSpacing: CGFloat = 6
-    static let swipeCommitRatio: CGFloat = 0.22
-    static let swipeCommitDistance: CGFloat = 64
     /// 渐变从图片高度的这个比例开始出现，图片底边处完全实心。
     static let scrimStart: CGFloat = 0.42
+    /// 封面图相对页面的视差速度差：0 = 图完全不动，1 = 与页面同速（即无视差）。
+    static let parallaxFactor: CGFloat = 0.35
+    /// 指示器被提到轮播外层后固定不动，页内文案要给它让出这段高度。
+    static let pageBarReservedHeight: CGFloat = 16
+
+    /// 封面图必须比页宽更宽，否则反向位移时会露出空边。
+    static func imageOverscanWidth(pageWidth: CGFloat) -> CGFloat {
+        max(0, pageWidth) * (1 + 2 * parallaxFactor)
+    }
+
+    /// 页面偏离屏幕的比例（0 = 正在屏幕上，±1 = 左右各一页）→ 封面图在页内的反向位移。
+    static func parallaxOffset(progress: CGFloat, pageWidth: CGFloat) -> CGFloat {
+        guard pageWidth > 0 else { return 0 }
+        let clamped = min(1, max(-1, progress))
+        return -clamped * pageWidth * parallaxFactor
+    }
+
+    /// 当前占屏最多的那一页 —— 跨过半页即换人，全局底色跟它走。
+    static func dominantIndex(scrollOffset: CGFloat, pageWidth: CGFloat, pageCount: Int) -> Int {
+        guard pageCount > 0, pageWidth > 0 else { return 0 }
+        let raw = Int((scrollOffset / pageWidth).rounded())
+        return min(max(0, raw), pageCount - 1)
+    }
 
     static func contentHeight(viewportHeight: CGFloat) -> CGFloat {
         max(minHeight, viewportHeight * viewportHeightRatio)
@@ -76,42 +97,60 @@ enum HomeHeroBannerLayout {
     }
 }
 
+/// banner 横向分页滚动的内容偏移量（正值 = 已向右滚过的距离）。
+private struct BannerScrollOffsetKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 /// 首页顶部沉浸式 Banner（竞品同款结构）。
 ///
+/// 分页靠 `ScrollView` + `.scrollTargetBehavior(.paging)`：跟手、松手才吸页，
+/// 每页的视图身份绑定 item，翻页只是容器位移，文案不会瞬变、图片不会淡入。
+///
 /// 层叠（由底到顶）：
-/// 1. 封面图（只占上部，底层）+ 整图轻染色
+/// 1. 封面图（只占上部，底层，超铺 1.7 倍页宽做视差）+ 整图轻染色
 /// 2. 图片底部「透明 → 实心主色」渐变，收口于图片底边
 /// 3. 图片下方剩余区域：实心主色（与页面底色同色，无硬边）
-/// 4. 文案（居中标题 / 评分行 / 简介）+ 轮播 indicator，锚定 banner 底部
+/// 4. 文案（标题 / 评分行 / 简介）随页全速走，锚定 banner 底部
+/// 5. 轮播 indicator 提到轮播外层，固定在左下角不随页面位移
 public struct HomeHeroBanner: View {
     let items: [BangumiItem]
     let activeIndex: Int
-    let palette: CoverColorPalette
+    /// 逐条封面色板（按 item.id）；每页各用各的色，中缝是硬分割。
+    let palettes: [Int: CoverColorPalette]
     var viewportHeight: CGFloat
     var topInset: CGFloat = 0
     var onChangeIndex: (Int) -> Void
+    var onDominantIndexChange: (Int) -> Void
     var onTapItem: (BangumiItem) -> Void
 
-    @State private var dragOffset: CGFloat = 0
-    @GestureState private var isDragging: Bool = false
+    @State private var scrollOffset: CGFloat = 0
+    @State private var scrolledSlot: Int?
 
     public init(
         items: [BangumiItem],
         activeIndex: Int,
-        palette: CoverColorPalette,
+        palettes: [Int: CoverColorPalette],
         viewportHeight: CGFloat,
         topInset: CGFloat = 0,
         onChangeIndex: @escaping (Int) -> Void,
+        onDominantIndexChange: @escaping (Int) -> Void,
         onTapItem: @escaping (BangumiItem) -> Void
     ) {
         self.items = items
         self.activeIndex = activeIndex
-        self.palette = palette
+        self.palettes = palettes
         self.viewportHeight = viewportHeight
         self.topInset = topInset
         self.onChangeIndex = onChangeIndex
+        self.onDominantIndexChange = onDominantIndexChange
         self.onTapItem = onTapItem
     }
+
+    private static let scrollSpace = "HomeHeroBannerScroll"
 
     private var totalHeight: CGFloat {
         HomeHeroBannerLayout.totalHeight(viewportHeight: viewportHeight, topInset: topInset)
@@ -121,9 +160,13 @@ public struct HomeHeroBanner: View {
         HomeHeroBannerLayout.imageHeight(totalHeight: totalHeight)
     }
 
-    /// 页面 / scrim 收口用的实心色（与 HomeView 底色一致）。
-    private var solidColor: Color {
-        palette.darkened.color
+    private func palette(for item: BangumiItem) -> CoverColorPalette {
+        palettes[item.id] ?? .fallback
+    }
+
+    /// 页面 / scrim 收口用的实心色。
+    private func solidColor(for item: BangumiItem) -> Color {
+        palette(for: item).darkened.color
     }
 
     public var body: some View {
@@ -149,114 +192,119 @@ public struct HomeHeroBanner: View {
     private func carousel(stretch: CGFloat) -> some View {
         GeometryReader { geo in
             let width = max(geo.size.width, 1)
-            ZStack {
-                if activeIndex > 0 {
-                    bannerPage(item: items[activeIndex - 1], interactive: false, stretch: stretch)
-                        .offset(x: -width + dragOffset)
+            ZStack(alignment: .bottomLeading) {
+                ScrollView(.horizontal) {
+                    HStack(spacing: 0) {
+                        ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                            bannerPage(
+                                item: item,
+                                progress: CGFloat(index) - scrollOffset / width,
+                                pageWidth: width,
+                                stretch: stretch
+                            )
+                            .frame(width: width)
+                            .id(index)
+                        }
+                    }
+                    .scrollTargetLayout()
+                    .background { offsetReader }
                 }
-                if activeIndex + 1 < items.count {
-                    bannerPage(item: items[activeIndex + 1], interactive: false, stretch: stretch)
-                        .offset(x: width + dragOffset)
+                .scrollTargetBehavior(.paging)
+                .scrollPosition(id: $scrolledSlot)
+                .scrollIndicators(.hidden)
+                .coordinateSpace(name: Self.scrollSpace)
+                .onPreferenceChange(BannerScrollOffsetKey.self) { offset in
+                    scrollOffset = offset
+                }
+                .onChange(of: HomeHeroBannerLayout.dominantIndex(
+                    scrollOffset: scrollOffset, pageWidth: width, pageCount: items.count
+                )) { _, dominant in
+                    onDominantIndexChange(dominant)
+                }
+                .onChange(of: scrolledSlot) { _, slot in
+                    guard let slot, slot != activeIndex else { return }
+                    onChangeIndex(slot)
+                }
+                .onAppear {
+                    if scrolledSlot == nil { scrolledSlot = activeIndex }
                 }
 
-                bannerPage(item: items[activeIndex], interactive: true, stretch: stretch)
-                    .offset(x: dragOffset)
-                    .gesture(swipeGesture(pageWidth: width))
+                pageBars(pageWidth: width)
+                    .padding(.leading, HomeHeroBannerLayout.horizontalPadding)
+                    .padding(.bottom, 10)
+                    .allowsHitTesting(false)
             }
             .frame(width: width, height: totalHeight + stretch)
             .clipped()
         }
     }
 
-    private func swipeGesture(pageWidth: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 12, coordinateSpace: .local)
-            .updating($isDragging) { _, state, _ in
-                state = true
-            }
-            .onChanged { value in
-                let raw = value.translation.width
-                let atStart = activeIndex == 0 && raw > 0
-                let atEnd = activeIndex >= items.count - 1 && raw < 0
-                if atStart || atEnd {
-                    dragOffset = raw * 0.28
-                } else {
-                    dragOffset = raw
-                }
-            }
-            .onEnded { value in
-                let raw = value.translation.width
-                let predicted = value.predictedEndTranslation.width
-                let distance = abs(predicted) > abs(raw) ? predicted : raw
-                let threshold = max(
-                    HomeHeroBannerLayout.swipeCommitDistance,
-                    pageWidth * HomeHeroBannerLayout.swipeCommitRatio
-                )
-
-                var target = activeIndex
-                if distance < -threshold, activeIndex + 1 < items.count {
-                    target = activeIndex + 1
-                } else if distance > threshold, activeIndex > 0 {
-                    target = activeIndex - 1
-                }
-
-                withAnimation(.spring(response: 0.38, dampingFraction: 0.88)) {
-                    dragOffset = 0
-                }
-                if target != activeIndex {
-                    onChangeIndex(target)
-                }
-            }
+    /// 用 scrollTargetLayout 的背景读内容偏移；`.paging` 不提供连续进度，只能自己量。
+    private var offsetReader: some View {
+        GeometryReader { proxy in
+            Color.clear.preference(
+                key: BannerScrollOffsetKey.self,
+                value: -proxy.frame(in: .named(Self.scrollSpace)).minX
+            )
+        }
     }
 
     @ViewBuilder
-    private func bannerPage(item: BangumiItem, interactive: Bool, stretch: CGFloat) -> some View {
+    private func bannerPage(
+        item: BangumiItem,
+        progress: CGFloat,
+        pageWidth: CGFloat,
+        stretch: CGFloat
+    ) -> some View {
+        let solid = solidColor(for: item)
         ZStack(alignment: .bottom) {
-                // ①② 底层：封面（只占上部）+ 渐变收口；下方剩余区域实心主色
-                VStack(spacing: 0) {
-                    coverImage(for: item)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: imageHeight + stretch)
-                        .clipped()
-                        .overlay {
-                            // 整图轻染主色，和页面色调统一
-                            solidColor.opacity(0.14)
-                        }
-                        .overlay { imageScrim }
-                        .overlay(alignment: .top) { statusBarShade }
-                    solidColor
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-                .animation(.easeInOut(duration: 0.65), value: palette)
+            // ①② 底层：封面（只占上部，随页视差慢跟）+ 渐变收口；下方剩余区域实心主色
+            VStack(spacing: 0) {
+                Color.clear
+                    .frame(width: pageWidth, height: imageHeight + stretch)
+                    .overlay {
+                        coverImage(for: item, solid: solid)
+                            .frame(
+                                width: HomeHeroBannerLayout.imageOverscanWidth(pageWidth: pageWidth),
+                                height: imageHeight + stretch
+                            )
+                            .clipped()
+                            .offset(x: HomeHeroBannerLayout.parallaxOffset(
+                                progress: progress, pageWidth: pageWidth
+                            ))
+                    }
+                    .clipped()
+                    .overlay {
+                        // 整图轻染主色，和页面色调统一
+                        solid.opacity(0.14)
+                    }
+                    .overlay { imageScrim(solid) }
+                    .overlay(alignment: .top) { statusBarShade }
+                solid
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .animation(.easeInOut(duration: 0.65), value: palette(for: item))
 
-                // ③ 顶层：文案 + indicator，锚定底部，上缘自然压在渐变区上
-                VStack(alignment: .leading, spacing: 10) {
-                    metaBlock(for: item)
-                    pageBars
-                        .padding(.top, 2)
-                }
+            // ③ 顶层：文案随页全速走，锚定底部，上缘自然压在渐变区上
+            metaBlock(for: item)
                 .padding(.horizontal, HomeHeroBannerLayout.horizontalPadding)
-                .padding(.bottom, 10)
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: totalHeight + stretch)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                guard interactive else { return }
-                onTapItem(item)
-            }
-            .allowsHitTesting(interactive)
+                .padding(.bottom, 10 + HomeHeroBannerLayout.pageBarReservedHeight)
+        }
+        .frame(width: pageWidth, height: totalHeight + stretch)
+        .contentShape(Rectangle())
+        .onTapGesture { onTapItem(item) }
     }
 
     /// 图片底部「透明 → 实心」，收口于图片底边，与下方实心区无缝。
-    private var imageScrim: some View {
+    private func imageScrim(_ solid: Color) -> some View {
         LinearGradient(
             stops: [
                 .init(color: .clear, location: 0),
                 .init(color: .clear, location: HomeHeroBannerLayout.scrimStart),
-                .init(color: solidColor.opacity(0.28), location: 0.66),
-                .init(color: solidColor.opacity(0.62), location: 0.82),
-                .init(color: solidColor.opacity(0.9), location: 0.93),
-                .init(color: solidColor, location: 1.0),
+                .init(color: solid.opacity(0.28), location: 0.66),
+                .init(color: solid.opacity(0.62), location: 0.82),
+                .init(color: solid.opacity(0.9), location: 0.93),
+                .init(color: solid, location: 1.0),
             ],
             startPoint: .top,
             endPoint: .bottom
@@ -278,7 +326,7 @@ public struct HomeHeroBanner: View {
     }
 
     @ViewBuilder
-    private func coverImage(for item: BangumiItem) -> some View {
+    private func coverImage(for item: BangumiItem, solid: Color) -> some View {
         let url = URL(string: item.images.best.isEmpty ? item.images.listBest : item.images.best)
         AsyncImage(url: url, transaction: Transaction(animation: .easeInOut(duration: 0.45))) { phase in
             switch phase {
@@ -288,12 +336,12 @@ public struct HomeHeroBanner: View {
                     .scaledToFill()
                     .transition(.opacity)
             case .failure:
-                solidColor
+                solid
             case .empty:
-                solidColor
+                solid
                     .overlay { ProgressView().tint(.white.opacity(0.7)) }
             @unknown default:
-                solidColor
+                solid
             }
         }
     }
@@ -371,20 +419,22 @@ public struct HomeHeroBanner: View {
 
     // MARK: - indicator
 
+    /// 固定在左下角，不随页面位移；高亮段按连续滚动进度伸缩，所以拖到一半是中间态。
     @ViewBuilder
-    private var pageBars: some View {
+    private func pageBars(pageWidth: CGFloat) -> some View {
         if items.count > 1 {
+            let position = pageWidth > 0 ? scrollOffset / pageWidth : 0
             HStack(spacing: HomeHeroBannerLayout.pageBarSpacing) {
                 ForEach(items.indices, id: \.self) { index in
+                    let weight = max(0, 1 - abs(position - CGFloat(index)))
                     Capsule()
-                        .fill(index == activeIndex ? Color.white : Color.white.opacity(0.35))
+                        .fill(Color.white.opacity(0.35 + 0.65 * weight))
                         .frame(
-                            width: index == activeIndex
-                                ? HomeHeroBannerLayout.pageBarActiveWidth
-                                : HomeHeroBannerLayout.pageBarWidth,
+                            width: HomeHeroBannerLayout.pageBarWidth
+                                + (HomeHeroBannerLayout.pageBarActiveWidth
+                                    - HomeHeroBannerLayout.pageBarWidth) * weight,
                             height: HomeHeroBannerLayout.pageBarHeight
                         )
-                        .animation(.spring(response: 0.32, dampingFraction: 0.8), value: activeIndex)
                 }
             }
             .accessibilityElement(children: .ignore)

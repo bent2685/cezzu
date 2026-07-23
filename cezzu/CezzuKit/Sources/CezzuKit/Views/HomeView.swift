@@ -13,6 +13,9 @@ public struct HomeView: View {
     var onTapSection: (HomeSection) -> Void
     var onTapHistoryEntry: (WatchHistoryEntry) -> Void
 
+    /// 当前占屏最多的 banner 页 —— 全局底色跟它走，跨半页即切，回弹也跟着变回。
+    @State private var dominantBannerIndex: Int = 0
+
     public init(
         model: HomeViewModel,
         history: HistoryStore,
@@ -27,11 +30,19 @@ public struct HomeView: View {
         self.onTapHistoryEntry = onTapHistoryEntry
     }
 
+    /// 占屏最多那页的色板；色板尚未取到时回落到默认深紫。
+    private var dominantPalette: CoverColorPalette {
+        guard model.bannerItems.indices.contains(dominantBannerIndex) else {
+            return model.activeBannerPalette
+        }
+        return model.bannerPalettes[model.bannerItems[dominantBannerIndex].id] ?? .fallback
+    }
+
     public var body: some View {
         GeometryReader { geo in
             let topInset = geo.safeAreaInsets.top
             let viewportHeight = geo.size.height + geo.safeAreaInsets.top + geo.safeAreaInsets.bottom
-            let palette = model.activeBannerPalette
+            let palette = dominantPalette
             let solid = palette.darkened.color
 
             ZStack {
@@ -45,10 +56,11 @@ public struct HomeView: View {
                         HomeHeroBanner(
                             items: model.bannerItems,
                             activeIndex: model.activeBannerIndex,
-                            palette: model.activeBannerPalette,
+                            palettes: model.bannerPalettes,
                             viewportHeight: viewportHeight,
                             topInset: topInset,
                             onChangeIndex: { model.setActiveBannerIndex($0) },
+                            onDominantIndexChange: { dominantBannerIndex = $0 },
                             onTapItem: onTapItem
                         )
                         .listRowInsets(EdgeInsets(
