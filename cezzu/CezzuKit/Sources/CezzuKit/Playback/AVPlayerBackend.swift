@@ -19,6 +19,8 @@ public final class AVPlayerBackend: VideoPlayerBackend {
     public private(set) var isBuffering: Bool = false
     /// 平滑后的下行吞吐（B/s）。`nil` 表示暂无有效采样（显示「—」）。
     public private(set) var downloadSpeedBps: Double?
+    /// 播放头所在那段缓冲区的结束时间（秒）。`nil` 表示尚无缓冲信息。
+    public private(set) var bufferedTime: TimeInterval?
     public var rate: Float { player.rate }
 
     private var timeObserverToken: Any?
@@ -73,6 +75,7 @@ public final class AVPlayerBackend: VideoPlayerBackend {
                     let total = item.duration.seconds
                     self.duration = total.isFinite ? total : 0
                 }
+                self.refreshBufferedTime()
             }
         }
     }
@@ -82,6 +85,8 @@ public final class AVPlayerBackend: VideoPlayerBackend {
         let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.refreshDownloadSpeed()
+                // 缓冲时播放时钟冻结，periodic observer 不回调，靠这个墙钟定时器补上。
+                self?.refreshBufferedTime()
             }
         }
         RunLoop.main.add(timer, forMode: .common)
@@ -102,6 +107,24 @@ public final class AVPlayerBackend: VideoPlayerBackend {
         } else {
             downloadSpeedBps = speedSampler.currentSpeed(at: now)
         }
+    }
+
+    private func refreshBufferedTime() {
+        guard let item = player.currentItem else {
+            bufferedTime = nil
+            return
+        }
+        let ranges = item.loadedTimeRanges.compactMap { value -> PlayerBufferedRangeResolver.Range? in
+            let range = value.timeRangeValue
+            let start = range.start.seconds
+            let end = range.end.seconds
+            guard start.isFinite, end.isFinite else { return nil }
+            return PlayerBufferedRangeResolver.Range(start: start, end: end)
+        }
+        bufferedTime = PlayerBufferedRangeResolver.bufferedTime(
+            ranges: ranges,
+            currentTime: currentTime
+        )
     }
 
     private func resetDownloadSpeed() {
@@ -215,6 +238,7 @@ public final class AVPlayerBackend: VideoPlayerBackend {
         player.pause()
         player.replaceCurrentItem(with: nil)
         resetDownloadSpeed()
+        bufferedTime = nil
     }
 
     /// 截取当前播放位置附近的一帧，作「最近观看」封面。
