@@ -35,8 +35,17 @@ public final class AVPlayerBackend: VideoPlayerBackend {
     /// `.waitingToPlayAtSpecifiedRate`，所以 KVO 抓不到。由 `seek(to:)` 自己维护。
     private var isSeeking: Bool = false
 
+    /// 期望的前向缓冲时长（秒）。
+    ///
+    /// 不设的话 AVPlayer 走自动策略：缓到「够播一会儿」就停止拉流，等播放头逼近
+    /// 缓冲尾再续 —— 慢源上这会反复触发 spinner。给一个明确的目标让它一直往前拉。
+    /// 只是 hint，AVPlayer 仍可能按自己的节奏来；给太大则换集时白下的流量变多。
+    public static let preferredForwardBufferSeconds: TimeInterval = 90
+
     public init(player: AVPlayer = AVPlayer()) {
         self.player = player
+        // 缓冲不足时宁可等也不要硬播出 stall —— 与上面的前向缓冲是一对。
+        player.automaticallyWaitsToMinimizeStalling = true
         installTimeObserver()
         installStateObservers()
         installSpeedTimer()
@@ -205,6 +214,7 @@ public final class AVPlayerBackend: VideoPlayerBackend {
             )
         }
         let item = AVPlayerItem(asset: asset)
+        item.preferredForwardBufferDuration = Self.preferredForwardBufferSeconds
         player.replaceCurrentItem(with: item)
         if startAt > 0.5 {
             await seek(to: startAt)
