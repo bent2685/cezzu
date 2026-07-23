@@ -22,16 +22,21 @@ public actor LocalReverseProxy {
     private var listener: NWListener?
     private var port: UInt16 = 0
     private var headers: [String: String] = [:]
-    private let session: URLSession
+    private let relay: StreamingHTTPRelay
 
-    public init(session: URLSession? = nil) {
-        if let session {
-            self.session = session
-        } else {
+    /// 判定 m3u8 需要的最少字节数（`#EXTM3U` 加上可能的 BOM / 空白）。
+    private static let sniffLength = 16
+
+    public init(configuration: URLSessionConfiguration? = nil) {
+        let cfg = configuration ?? {
             let cfg = URLSessionConfiguration.ephemeral
-            cfg.timeoutIntervalForRequest = 30
-            self.session = URLSession(configuration: cfg)
-        }
+            // 流式转发下这是「两块数据之间的空闲上限」，不是整段下载的总时长，
+            // 慢源上分片下几十秒是常态，30 秒会把它们直接判死。
+            cfg.timeoutIntervalForRequest = 60
+            cfg.timeoutIntervalForResource = 600
+            return cfg
+        }()
+        self.relay = StreamingHTTPRelay(configuration: cfg)
     }
 
     /// 启动监听并返回一个本地代理 URL。`headers` 会被注入到所有上游请求。
@@ -195,41 +200,58 @@ public actor LocalReverseProxy {
         if let range = clientHead.headers["Range"] ?? clientHead.headers["range"] {
             req.setValue(range, forHTTPHeaderField: "Range")
         }
-        let (data, response) = try await session.data(for: req)
-        guard let http = response as? HTTPURLResponse else {
-            await sendStatus(.badGateway, on: connection)
+        let (http, body) = try await relay.fetch(req)
+        var iterator = body.makeAsyncIterator()
+
+        // 先攒够嗅探长度：m3u8 必须整体读入才能重写 URL，媒体分片则要立刻开始转发。
+        var prefix = Data()
+        while prefix.count < Self.sniffLength, let chunk = try await iterator.next() {
+            prefix.append(chunk)
+        }
+
+        let upstreamHeaders = Self.stringHeaders(http.allHeaderFields)
+        let contentType = http.value(forHTTPHeaderField: "Content-Type") ?? ""
+
+        if isHLSResponse(contentType: contentType, data: prefix) {
+            var manifest = prefix
+            while let chunk = try await iterator.next() {
+                manifest.append(chunk)
+            }
+            let rewritten = rewriteHLS(data: manifest, baseURL: originalURL)
+            let head = ProxyResponseHead.build(
+                statusCode: http.statusCode,
+                upstreamHeaders: upstreamHeaders,
+                contentLength: rewritten.count
+            )
+            var out = Data(head.utf8)
+            out.append(rewritten)
+            await sendAndClose(out, on: connection)
             return
         }
-        let contentType = http.value(forHTTPHeaderField: "Content-Type") ?? ""
-        let bodyData: Data
-        if isHLSResponse(contentType: contentType, data: data) {
-            let rewritten = rewriteHLS(data: data, baseURL: originalURL)
-            bodyData = rewritten
-        } else {
-            bodyData = data
-        }
 
-        var head = "HTTP/1.1 \(http.statusCode) OK\r\n"
-        // 透传部分关键头
-        var passHeaders: [String: String] = [:]
-        let allowed = ["content-type", "content-range", "accept-ranges", "etag", "last-modified"]
-        for (k, v) in http.allHeaderFields {
-            guard let key = k as? String, let value = v as? String else { continue }
-            if allowed.contains(key.lowercased()) {
-                passHeaders[key] = value
-            }
+        // 媒体分片：响应头先落地，body 边收边发，AVPlayer 不用等整片下完。
+        let head = ProxyResponseHead.build(
+            statusCode: http.statusCode,
+            upstreamHeaders: upstreamHeaders,
+            contentLength: http.expectedContentLength >= 0 ? Int(http.expectedContentLength) : nil
+        )
+        try await send(Data(head.utf8), on: connection)
+        if !prefix.isEmpty {
+            try await send(prefix, on: connection)
         }
-        passHeaders["Content-Length"] = String(bodyData.count)
-        passHeaders["Connection"] = "close"
-        for (k, v) in passHeaders {
-            head += "\(k): \(v)\r\n"
+        while let chunk = try await iterator.next() {
+            try await send(chunk, on: connection)
         }
-        head += "\r\n"
+        connection.cancel()
+    }
 
-        var out = Data()
-        out.append(head.data(using: .ascii) ?? Data())
-        out.append(bodyData)
-        await sendAndClose(out, on: connection)
+    private static func stringHeaders(_ raw: [AnyHashable: Any]) -> [String: String] {
+        var result: [String: String] = [:]
+        for (key, value) in raw {
+            guard let key = key as? String, let value = value as? String else { continue }
+            result[key] = value
+        }
+        return result
     }
 
     private func isHLSResponse(contentType: String, data: Data) -> Bool {
@@ -270,6 +292,22 @@ public actor LocalReverseProxy {
         let head = "HTTP/1.1 \(status.rawValue) ERR\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
         if let data = head.data(using: .ascii) {
             await sendAndClose(data, on: connection)
+        }
+    }
+
+    /// 等待本块真正写出去再返回 —— 这就是对上游的天然背压。
+    private func send(_ data: Data, on connection: NWConnection) async throws {
+        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+            connection.send(
+                content: data,
+                completion: .contentProcessed { error in
+                    if let error {
+                        cont.resume(throwing: error)
+                    } else {
+                        cont.resume()
+                    }
+                }
+            )
         }
     }
 
