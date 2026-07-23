@@ -50,7 +50,6 @@ struct CezzuApp: App {
                 ))
                 .environment(\.playerInteractionController, PlayerInteractionController(
                     showsFullscreenToggle: false,
-                    showsOneHandModeToggle: true,
                     makeOverlay: { actions in
                         AnyView(PlayerInteractionOverlay(actions: actions))
                     }

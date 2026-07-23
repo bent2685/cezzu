@@ -30,7 +30,6 @@ public struct PlayerView: View {
     @State private var showResumePrompt: Bool = false
     @State private var isImmersive: Bool = false
     @State private var controlsVisible: Bool = false
-    @State private var centerControlsMode: PlayerCenterControlsMode = .standard
     @State private var isSourcePanelPresented: Bool = false
     @State private var isDanmakuSettingsPresented: Bool = false
     @State private var scrubbingState = PlayerScrubbingState()
@@ -126,17 +125,6 @@ public struct PlayerView: View {
                                 font: .subheadline
                             ) {
                                 presentDanmakuSettings()
-                            }
-                            if interaction.showsOneHandModeToggle {
-                                legacyCircularControlButton(
-                                    systemImage: centerControlsMode == .oneHanded
-                                        ? "rectangle.center.inset.filled"
-                                        : "hand.point.left.fill",
-                                    size: 42,
-                                    font: .subheadline
-                                ) {
-                                    toggleCenterControlsMode()
-                                }
                             }
                             legacyCircularControlButton(
                                 systemImage: "rectangle.stack.badge.play",
@@ -435,43 +423,33 @@ public struct PlayerView: View {
 
     @ViewBuilder
     private var centerPlaybackControls: some View {
-        let layout = PlayerCenterControlsLayout(mode: centerControlsMode)
-
         GlassContainer {
-            controlsStack(layout: layout) {
-                centerPlaybackButtons(layout: layout)
+            HStack(spacing: 18) {
+                GlassPlaybackControlButton(
+                    systemImage: "gobackward.10",
+                    accessibilityLabel: "快退 10 秒"
+                ) {
+                    seekRelative(-10)
+                }
+
+                GlassPlaybackControlButton(
+                    systemImage: coordinator.phase == .playing ? "pause.fill" : "play.fill",
+                    accessibilityLabel: coordinator.phase == .playing ? "暂停" : "播放",
+                    prominence: .primary
+                ) {
+                    togglePlayPause()
+                }
+
+                GlassPlaybackControlButton(
+                    systemImage: "goforward.10",
+                    accessibilityLabel: "快进 10 秒"
+                ) {
+                    seekRelative(10)
+                }
             }
-            .padding(.horizontal, layout.horizontalPadding)
-            .padding(layout.edgePadding)
+            .padding(.horizontal, 24)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: layout.stackAlignment)
-    }
-
-    @ViewBuilder
-    private func centerPlaybackButtons(layout: PlayerCenterControlsLayout) -> some View {
-        GlassPlaybackControlButton(
-            systemImage: "gobackward.10",
-            accessibilityLabel: "快退 10 秒"
-        ) {
-            seekRelative(-10)
-        }
-
-        if layout.showsCenterPlayPause {
-            GlassPlaybackControlButton(
-                systemImage: coordinator.phase == .playing ? "pause.fill" : "play.fill",
-                accessibilityLabel: coordinator.phase == .playing ? "暂停" : "播放",
-                prominence: .primary
-            ) {
-                togglePlayPause()
-            }
-        }
-
-        GlassPlaybackControlButton(
-            systemImage: "goforward.10",
-            accessibilityLabel: "快进 10 秒"
-        ) {
-            seekRelative(10)
-        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 
     @ViewBuilder
@@ -485,16 +463,6 @@ public struct PlayerView: View {
             playNeighborEpisode(step: -1)
         }
 
-        if PlayerCenterControlsLayout(mode: centerControlsMode).embedsPlayPauseInEpisodeRow {
-            iconControlButton(
-                systemImage: coordinator.phase == .playing ? "pause.fill" : "play.fill",
-                size: size,
-                font: font
-            ) {
-                togglePlayPause()
-            }
-        }
-
         iconControlButton(
             systemImage: "forward.end.fill",
             size: size,
@@ -502,22 +470,6 @@ public struct PlayerView: View {
             isEnabled: activeRequest.hasNextEpisode
         ) {
             playNeighborEpisode(step: 1)
-        }
-    }
-
-    @ViewBuilder
-    private func controlsStack<Content: View>(
-        layout: PlayerCenterControlsLayout,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        if layout.isVertical {
-            VStack(spacing: layout.spacing) {
-                content()
-            }
-        } else {
-            HStack(spacing: layout.spacing) {
-                content()
-            }
         }
     }
 
@@ -865,13 +817,6 @@ public struct PlayerView: View {
         revealControlsTemporarily()
     }
 
-    private func toggleCenterControlsMode() {
-        withAnimation(.easeInOut(duration: 0.2)) {
-            centerControlsMode = centerControlsMode == .standard ? .oneHanded : .standard
-        }
-        revealControlsTemporarily()
-    }
-
     private func close() {
         // 先落盘当前帧，再关页；避免只依赖 onDisappear 时进度还没写完 UI 已刷新。
         Task { @MainActor in
@@ -1077,18 +1022,15 @@ public struct PlayerInteractionActions: Sendable {
 
 public struct PlayerInteractionController: @unchecked Sendable {
     public let showsFullscreenToggle: Bool
-    public let showsOneHandModeToggle: Bool
     private let makeOverlayImpl: @MainActor (PlayerInteractionActions) -> AnyView
 
     public init(
         showsFullscreenToggle: Bool = true,
-        showsOneHandModeToggle: Bool = false,
         makeOverlay: @escaping @MainActor (PlayerInteractionActions) -> AnyView = { _ in
             AnyView(EmptyView())
         }
     ) {
         self.showsFullscreenToggle = showsFullscreenToggle
-        self.showsOneHandModeToggle = showsOneHandModeToggle
         self.makeOverlayImpl = makeOverlay
     }
 

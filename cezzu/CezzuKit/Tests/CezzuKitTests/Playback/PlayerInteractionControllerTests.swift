@@ -5,22 +5,17 @@ import Testing
 @MainActor
 struct PlayerInteractionControllerTests {
 
-    @Test("default controller keeps fullscreen toggle and hides one handed toggle")
+    @Test("default controller keeps fullscreen toggle")
     func defaultValues() {
         let controller = PlayerInteractionController()
 
         #expect(controller.showsFullscreenToggle)
-        #expect(!controller.showsOneHandModeToggle)
     }
 
     @Test("custom controller exposes configured toggle capabilities")
     func customValues() {
-        let controller = PlayerInteractionController(
-            showsFullscreenToggle: false,
-            showsOneHandModeToggle: true
-        )
+        let controller = PlayerInteractionController(showsFullscreenToggle: false)
 
         #expect(!controller.showsFullscreenToggle)
-        #expect(controller.showsOneHandModeToggle)
     }
 }
