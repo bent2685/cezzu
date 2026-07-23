@@ -235,6 +235,7 @@ public struct HomeHeroBanner: View {
         GeometryReader { geo in
             let width = max(geo.size.width, 1)
             let originX = geo.frame(in: .global).minX
+            let chrome = dominantPalette(pageWidth: width)
             ZStack(alignment: .bottomLeading) {
                 ScrollView(.horizontal) {
                     HStack(spacing: 0) {
@@ -248,7 +249,8 @@ public struct HomeHeroBanner: View {
                                     )],
                                     progress: progress,
                                     pageWidth: width,
-                                    stretch: stretch
+                                    stretch: stretch,
+                                    chrome: chrome
                                 )
                                 .preference(
                                     key: BannerScrollOffsetKey.self,
@@ -308,6 +310,13 @@ public struct HomeHeroBanner: View {
         return HomeHeroBannerLayout.realIndex(slot: slot, itemCount: items.count)
     }
 
+    /// 占屏最多那页的色板 —— banner 收口色与整页底色都用它，保证两者一致。
+    private func dominantPalette(pageWidth: CGFloat) -> CoverColorPalette {
+        let index = dominantRealIndex(pageWidth: pageWidth)
+        guard items.indices.contains(index) else { return .fallback }
+        return palette(for: items[index])
+    }
+
     /// 停稳在段外时静默搬回中段。三段内容一致，所以搬迁不可见，
     /// 哪怕手指还按着也不会看出跳变。
     private func recenterIfSettled(pageWidth: CGFloat) {
@@ -327,9 +336,13 @@ public struct HomeHeroBanner: View {
         item: BangumiItem,
         progress: CGFloat,
         pageWidth: CGFloat,
-        stretch: CGFloat
+        stretch: CGFloat,
+        chrome: CoverColorPalette
     ) -> some View {
         let solid = solidColor(for: item)
+        // 收口色跟整页背景走，不跟本页走：否则拖到一半时左右两页的实心色带
+        // 各自一色、又都对不上下方页面底色，会拼出一块 L 形硬边。
+        let closing = chrome.darkened.color
         ZStack(alignment: .bottom) {
             // ①② 底层：封面（只占上部，随页视差慢跟）+ 渐变收口；下方剩余区域实心主色
             VStack(spacing: 0) {
@@ -351,12 +364,13 @@ public struct HomeHeroBanner: View {
                         // 整图轻染主色，和页面色调统一
                         solid.opacity(0.14)
                     }
-                    .overlay { imageScrim(solid) }
+                    .overlay { imageScrim(solid, closing: closing) }
                     .overlay(alignment: .top) { statusBarShade }
-                solid
+                closing
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .animation(.easeInOut(duration: 0.65), value: palette(for: item))
+            .animation(.easeInOut(duration: 0.65), value: chrome)
 
             // ③ 顶层：文案随页全速走，锚定底部，上缘自然压在渐变区上
             metaBlock(for: item)
@@ -369,15 +383,18 @@ public struct HomeHeroBanner: View {
     }
 
     /// 图片底部「透明 → 实心」，收口于图片底边，与下方实心区无缝。
-    private func imageScrim(_ solid: Color) -> some View {
+    ///
+    /// 中段仍用本页主色（拖动时左右两页的图像区色调各不相同），
+    /// 但最后收口到整页底色，让图像以下不再有可见分界。
+    private func imageScrim(_ solid: Color, closing: Color) -> some View {
         LinearGradient(
             stops: [
                 .init(color: .clear, location: 0),
                 .init(color: .clear, location: HomeHeroBannerLayout.scrimStart),
                 .init(color: solid.opacity(0.28), location: 0.66),
                 .init(color: solid.opacity(0.62), location: 0.82),
-                .init(color: solid.opacity(0.9), location: 0.93),
-                .init(color: solid, location: 1.0),
+                .init(color: closing.opacity(0.9), location: 0.93),
+                .init(color: closing, location: 1.0),
             ],
             startPoint: .top,
             endPoint: .bottom
