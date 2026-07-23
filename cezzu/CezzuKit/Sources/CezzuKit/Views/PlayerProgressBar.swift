@@ -21,20 +21,36 @@ enum PlayerProgressBarGeometry {
         guard width > thumbWidth else { return width / 2 }
         return half + CGFloat(min(max(fraction, 0), 1)) * (width - thumbWidth)
     }
+
+    /// 预览窗跟着把手走，但拖到两端时要夹住，不能飘出轨道之外。
+    static func previewCenterX(
+        thumbCenterX: CGFloat,
+        width: CGFloat,
+        previewWidth: CGFloat
+    ) -> CGFloat {
+        let half = previewWidth / 2
+        guard width > previewWidth else { return width / 2 }
+        return min(max(thumbCenterX, half), width - half)
+    }
 }
 
 /// 播放进度条：已播 / 已缓冲 / 未加载三段 + 竖向胶囊把手。
 ///
 /// 不用原生 `Slider` 是因为它的把手只能是圆点，做不出稿子里高于轨道的竖条。
-struct PlayerProgressBar: View {
+struct PlayerProgressBar<Preview: View>: View {
     @Binding var position: TimeInterval
     let duration: TimeInterval
     let bufferedTime: TimeInterval?
     /// 语义对齐 `Slider(onEditingChanged:)`：拖拽开始传 true，结束传 false。
     let onEditingChanged: (Bool) -> Void
+    /// 拖拽期间浮在把手正上方的预览窗。宽度由 `previewWidth` 固定，方便夹边。
+    @ViewBuilder let preview: () -> Preview
 
     @State private var isDragging = false
 
+    private let previewWidth: CGFloat = 168
+    /// 预览窗底边与轨道之间留出的抬升量（含预览自身高度）。
+    private let previewLift: CGFloat = 84
     private let thumbWidth: CGFloat = 6
     private let idleTrackHeight: CGFloat = 6
     private let activeTrackHeight: CGFloat = 10
@@ -73,17 +89,33 @@ struct PlayerProgressBar: View {
                     .fill(.white)
                     .frame(width: width * playedFraction, height: trackHeight)
 
+                let thumbX = PlayerProgressBarGeometry.thumbCenterX(
+                    fraction: playedFraction,
+                    width: width,
+                    thumbWidth: thumbWidth
+                )
+
                 Capsule()
                     .fill(.white)
                     .frame(width: thumbWidth, height: thumbHeight)
-                    .position(
-                        x: PlayerProgressBarGeometry.thumbCenterX(
-                            fraction: playedFraction,
-                            width: width,
-                            thumbWidth: thumbWidth
-                        ),
-                        y: proxy.size.height / 2
-                    )
+                    .position(x: thumbX, y: proxy.size.height / 2)
+
+                if isDragging {
+                    preview()
+                        .frame(width: previewWidth)
+                        .position(
+                            x: PlayerProgressBarGeometry.previewCenterX(
+                                thumbCenterX: thumbX,
+                                width: width,
+                                previewWidth: previewWidth
+                            ),
+                            y: proxy.size.height / 2
+                        )
+                        // 浮到轨道上方，不参与布局也不吃手势。
+                        .offset(y: -previewLift)
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                }
             }
             .frame(maxHeight: .infinity)
             .contentShape(Rectangle())

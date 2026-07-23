@@ -48,4 +48,44 @@ struct PlayerProgressBarGeometryTests {
     func thumbCenterDegenerateWidth() {
         #expect(PlayerProgressBarGeometry.thumbCenterX(fraction: 0.5, width: 4, thumbWidth: 6) == 2)
     }
+
+    @Test("preview follows the thumb in the middle of the track")
+    func previewFollowsThumb() {
+        let x = PlayerProgressBarGeometry.previewCenterX(
+            thumbCenterX: 300,
+            width: 600,
+            previewWidth: 168
+        )
+
+        #expect(x == 300)
+    }
+
+    @Test("preview is clamped so it never overflows either end")
+    func previewClampsAtEnds() {
+        #expect(
+            PlayerProgressBarGeometry.previewCenterX(
+                thumbCenterX: 3,
+                width: 600,
+                previewWidth: 168
+            ) == 84
+        )
+        #expect(
+            PlayerProgressBarGeometry.previewCenterX(
+                thumbCenterX: 597,
+                width: 600,
+                previewWidth: 168
+            ) == 516
+        )
+    }
+
+    @Test("a track narrower than the preview centers it")
+    func previewOnNarrowTrack() {
+        #expect(
+            PlayerProgressBarGeometry.previewCenterX(
+                thumbCenterX: 10,
+                width: 100,
+                previewWidth: 168
+            ) == 50
+        )
+    }
 }

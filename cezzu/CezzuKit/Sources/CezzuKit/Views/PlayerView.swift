@@ -33,6 +33,7 @@ public struct PlayerView: View {
     @State private var isSourcePanelPresented: Bool = false
     @State private var isDanmakuSettingsPresented: Bool = false
     @State private var scrubbingState = PlayerScrubbingState()
+    @State private var scrubPreview = PlayerScrubPreviewController()
     @State private var autoHideTask: Task<Void, Never>?
     @State private var temporaryBoostBaseRate: Float?
     @State private var temporaryBoostRate: Float?
@@ -409,12 +410,17 @@ public struct PlayerView: View {
                 PlayerProgressBar(
                     position: Binding(
                         get: { scrubbingState.position },
-                        set: { scrubbingState.update(position: $0) }
+                        set: { newPosition in
+                            scrubbingState.update(position: newPosition)
+                            scrubPreview.request(at: newPosition)
+                        }
                     ),
                     duration: coordinator.backend.duration,
                     bufferedTime: coordinator.backend.bufferedTime,
                     onEditingChanged: handleScrubbingChanged
-                )
+                ) {
+                    scrubPreviewCard
+                }
 
                 Text(formatTime(coordinator.backend.duration))
                     .font(.caption.monospacedDigit())
@@ -443,6 +449,32 @@ public struct PlayerView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .shadow(color: .black.opacity(0.35), radius: 10, y: 2)
+    }
+
+    /// 拖拽预览窗。抽帧在 HLS 上可能整段失败，那时只剩时间戳 —— 这是预期回落，不是错误。
+    @ViewBuilder
+    private var scrubPreviewCard: some View {
+        VStack(spacing: 0) {
+            if let image = scrubPreview.image {
+                Image(decorative: image, scale: 1)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(height: 94)
+                    .clipped()
+            }
+            Text(formatTime(scrubbingState.position))
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .foregroundStyle(.white)
+                .padding(.vertical, 5)
+                .frame(maxWidth: .infinity)
+        }
+        .background(Color.black.opacity(0.55))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(.white.opacity(0.25), lineWidth: 0.5)
+        }
+        .shadow(color: .black.opacity(0.45), radius: 12, y: 4)
     }
 
     /// 主播放操作：稿子里它们是裸图标，不收进胶囊。
@@ -678,9 +710,11 @@ public struct PlayerView: View {
     private func handleScrubbingChanged(_ editing: Bool) {
         if editing {
             scrubbingState.begin(at: coordinator.backend.currentTime)
+            scrubPreview.prepare(for: coordinator.backend.player.currentItem?.asset)
             autoHideTask?.cancel()
             controlsVisible = true
         } else {
+            scrubPreview.reset()
             finishScrubbing()
         }
     }
