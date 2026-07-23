@@ -56,7 +56,6 @@ public struct PlayerView: View {
         let overlayVisibility = PlayerOverlayVisibility(
             controlsVisible: controlsVisible,
             isTemporaryBoosting: temporaryBoostRate != nil,
-            isSourcePanelPresented: isSourcePanelPresented,
             isLoadingVisible: isLoadingVisible,
             phase: coordinator.phase
         )
@@ -90,86 +89,27 @@ public struct PlayerView: View {
                     .transition(.opacity)
             }
 
-            if overlayVisibility.showsCenterPlaybackControls {
-                centerPlaybackControls
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                    .transition(.scale(scale: 0.92).combined(with: .opacity))
-            }
+            noticeOverlay
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
 
             if overlayVisibility.showsTopBar {
                 VStack {
-                    ZStack(alignment: .top) {
-                        topControlsGradient
-                        HStack(spacing: 12) {
-                            legacyCircularControlButton(
-                                systemImage: "chevron.backward",
-                                size: 42,
-                                font: .subheadline
-                            ) {
-                                close()
-                            }
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(activeRequest.anime.title)
-                                    .font(.subheadline.weight(.semibold))
-                                    .lineLimit(1)
-                                Text(activeRequest.episode.title)
-                                    .font(.caption)
-                                    .foregroundStyle(.white.opacity(0.82))
-                                    .lineLimit(1)
-                            }
-                            .foregroundStyle(.white)
-                            Spacer()
-                            legacyCircularControlButton(
-                                systemImage: "text.bubble",
-                                size: 42,
-                                font: .subheadline
-                            ) {
-                                presentDanmakuSettings()
-                            }
-                            legacyCircularControlButton(
-                                systemImage: "rectangle.stack.badge.play",
-                                size: 42,
-                                font: .subheadline
-                            ) {
-                                toggleSourcePanel()
-                            }
-                        }
+                    topBar
                         .padding(.horizontal, 20)
                         .padding(.top, 18)
-                    }
                     Spacer()
                 }
                 .transition(.opacity)
             }
 
             if overlayVisibility.showsBottomControls {
-                VStack(spacing: 12) {
-                    if coordinator.requiresProxyWarning {
-                        GlassPanel {
-                            Label(
-                                "本地代理已关闭 —— 该规则需要 Referer，可能播放失败。在设置中可重新开启。",
-                                systemImage: "exclamationmark.triangle"
-                            )
-                            .font(.footnote)
-                        }
-                        .padding(.horizontal)
-                    }
-                    if case .failed(let message) = coordinator.phase {
-                        GlassPanel {
-                            Label(message, systemImage: "xmark.octagon")
-                                .font(.footnote)
-                                .foregroundStyle(.red)
-                        }
-                        .padding(.horizontal)
-                    }
-                    Spacer(minLength: 0)
-                    ZStack(alignment: .bottom) {
-                        bottomControlsGradient
-                        controls
-                            .padding(.horizontal, 20)
-                            .padding(.bottom, 18)
-                    }
+                ZStack(alignment: .bottom) {
+                    bottomControlsGradient
+                    controls
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 18)
                 }
+                .frame(maxHeight: .infinity, alignment: .bottom)
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
 
@@ -369,31 +309,111 @@ public struct PlayerView: View {
         .allowsHitTesting(false)
     }
 
+    // MARK: - top bar
+
+    @ViewBuilder
+    private var topBar: some View {
+        HStack(spacing: 12) {
+            legacyCircularControlButton(
+                systemImage: "xmark",
+                size: 42,
+                font: .subheadline
+            ) {
+                close()
+            }
+
+            capsuleCluster {
+                if pictureInPictureController.isSupported {
+                    iconControlButton(systemImage: "pip.enter", size: 40, font: .subheadline) {
+                        pictureInPictureController.start()
+                        revealControlsTemporarily()
+                    }
+                }
+                superResolutionMenuButton(size: 40, font: .subheadline)
+            }
+
+            Spacer(minLength: 12)
+
+            if let speedText = downloadSpeedText {
+                Text(speedText)
+                    .font(.caption.monospacedDigit().weight(.medium))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .shadow(color: .black.opacity(0.4), radius: 8, y: 1)
+                    .fixedSize()
+                    .accessibilityLabel("下行速度")
+            }
+
+            capsuleCluster {
+                systemPlayback.routePickerButton()
+                iconControlButton(systemImage: "text.bubble", size: 40, font: .subheadline) {
+                    presentDanmakuSettings()
+                }
+                iconControlButton(
+                    systemImage: "rectangle.stack.badge.play",
+                    size: 40,
+                    font: .subheadline
+                ) {
+                    toggleSourcePanel()
+                }
+            }
+        }
+    }
+
+    /// 速度为 0 / 无采样时返回 nil —— 顶栏整个标签隐藏，不占位。
+    private var downloadSpeedText: String? {
+        guard let bps = coordinator.backend.downloadSpeedBps, bps > 0 else { return nil }
+        return DownloadSpeedFormatter.format(bytesPerSecond: bps)
+    }
+
+    // MARK: - notices
+
+    @ViewBuilder
+    private var noticeOverlay: some View {
+        VStack(spacing: 12) {
+            if coordinator.requiresProxyWarning {
+                GlassPanel {
+                    Label(
+                        "本地代理已关闭 —— 该规则需要 Referer，可能播放失败。在设置中可重新开启。",
+                        systemImage: "exclamationmark.triangle"
+                    )
+                    .font(.footnote)
+                }
+            }
+            if case .failed(let message) = coordinator.phase {
+                GlassPanel {
+                    Label(message, systemImage: "xmark.octagon")
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                }
+            }
+        }
+        .frame(maxWidth: 520)
+        .padding(.horizontal, 20)
+    }
+
     // MARK: - controls
 
     @ViewBuilder
     private var controls: some View {
-        VStack(spacing: 14) {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("\(activeRequest.anime.title) \(activeRequest.episode.title)")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+
             HStack(spacing: 12) {
                 Text(formatTime(scrubbingState.position))
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.white.opacity(0.92))
 
-                Slider(
-                    value: Binding(
+                PlayerProgressBar(
+                    position: Binding(
                         get: { scrubbingState.position },
                         set: { scrubbingState.update(position: $0) }
                     ),
-                    in: 0...max(coordinator.backend.duration, 1),
+                    duration: coordinator.backend.duration,
+                    bufferedTime: coordinator.backend.bufferedTime,
                     onEditingChanged: handleScrubbingChanged
-                )
-                .tint(.white)
-                .contentShape(Rectangle())
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 0)
-                        .onEnded { _ in
-                            finishScrubbing()
-                        }
                 )
 
                 Text(formatTime(coordinator.backend.duration))
@@ -401,13 +421,68 @@ public struct PlayerView: View {
                     .foregroundStyle(.white.opacity(0.92))
             }
 
-            ViewThatFits {
-                wideControlsRow
-                compactControlsRow
+            HStack(spacing: 0) {
+                playbackButtonRow
+                Spacer(minLength: 24)
+                capsuleCluster {
+                    episodeCluster(size: 40, font: .subheadline)
+                    speedMenuButton
+                    if interaction.showsFullscreenToggle {
+                        iconControlButton(
+                            systemImage: isImmersive
+                                ? "arrow.down.right.and.arrow.up.left"
+                                : "arrow.up.left.and.arrow.down.right",
+                            size: 40,
+                            font: .subheadline
+                        ) {
+                            toggleImmersive()
+                        }
+                    }
+                }
             }
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .shadow(color: .black.opacity(0.35), radius: 10, y: 2)
+    }
+
+    /// 主播放操作：稿子里它们是裸图标，不收进胶囊。
+    @ViewBuilder
+    private var playbackButtonRow: some View {
+        HStack(spacing: 18) {
+            iconControlButton(systemImage: "gobackward.10", size: 44, font: .title3) {
+                seekRelative(-10)
+            }
+            .accessibilityLabel("快退 10 秒")
+
+            iconControlButton(
+                systemImage: coordinator.phase == .playing ? "pause.fill" : "play.fill",
+                size: 44,
+                font: .title
+            ) {
+                togglePlayPause()
+            }
+            .accessibilityLabel(coordinator.phase == .playing ? "暂停" : "播放")
+
+            iconControlButton(systemImage: "goforward.10", size: 44, font: .title3) {
+                seekRelative(10)
+            }
+            .accessibilityLabel("快进 10 秒")
+        }
+    }
+
+    /// 一组次要操作收进单个 glass 胶囊。
+    @ViewBuilder
+    private func capsuleCluster<Content: View>(
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        GlassContainer {
+            HStack(spacing: 2) {
+                content()
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 2)
+            .glassBackground(in: Capsule())
+        }
     }
 
     @ViewBuilder
@@ -419,37 +494,6 @@ public struct PlayerView: View {
             .padding(.vertical, 8)
             .glassBackground(in: Capsule(), tint: Color.white.opacity(0.08))
             .allowsHitTesting(false)
-    }
-
-    @ViewBuilder
-    private var centerPlaybackControls: some View {
-        GlassContainer {
-            HStack(spacing: 18) {
-                GlassPlaybackControlButton(
-                    systemImage: "gobackward.10",
-                    accessibilityLabel: "快退 10 秒"
-                ) {
-                    seekRelative(-10)
-                }
-
-                GlassPlaybackControlButton(
-                    systemImage: coordinator.phase == .playing ? "pause.fill" : "play.fill",
-                    accessibilityLabel: coordinator.phase == .playing ? "暂停" : "播放",
-                    prominence: .primary
-                ) {
-                    togglePlayPause()
-                }
-
-                GlassPlaybackControlButton(
-                    systemImage: "goforward.10",
-                    accessibilityLabel: "快进 10 秒"
-                ) {
-                    seekRelative(10)
-                }
-            }
-            .padding(.horizontal, 24)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 
     @ViewBuilder
@@ -473,23 +517,6 @@ public struct PlayerView: View {
         }
     }
 
-    private var topControlsGradient: some View {
-        LinearGradient(
-            stops: [
-                .init(color: .black.opacity(0.72), location: 0),
-                .init(color: .black.opacity(0.38), location: 0.38),
-                .init(color: .black.opacity(0.14), location: 0.72),
-                .init(color: .clear, location: 1),
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-        .frame(maxWidth: .infinity)
-        .frame(height: 168)
-        .ignoresSafeArea(edges: .top)
-        .allowsHitTesting(false)
-    }
-
     private var bottomControlsGradient: some View {
         LinearGradient(
             stops: [
@@ -502,7 +529,8 @@ public struct PlayerView: View {
             endPoint: .top
         )
         .frame(maxWidth: .infinity)
-        .frame(height: 168)
+        // 底部多了标题行，蒙层要比原来高一截才托得住。
+        .frame(height: 200)
         .ignoresSafeArea(edges: .bottom)
         .allowsHitTesting(false)
     }
@@ -531,79 +559,6 @@ public struct PlayerView: View {
     }
 
     @ViewBuilder
-    private var wideControlsRow: some View {
-        HStack {
-            HStack(spacing: 22) {
-                episodeCluster()
-            }
-
-            Spacer(minLength: 24)
-
-            HStack(spacing: 18) {
-                systemPlayback.routePickerButton()
-                if pictureInPictureController.isSupported {
-                    iconControlButton(systemImage: "pip.enter") {
-                        pictureInPictureController.start()
-                        revealControlsTemporarily()
-                    }
-                }
-                downloadSpeedLabel
-                superResolutionMenuButton()
-                speedMenuButton
-                if interaction.showsFullscreenToggle {
-                    iconControlButton(
-                        systemImage: isImmersive
-                            ? "arrow.down.right.and.arrow.up.left"
-                            : "arrow.up.left.and.arrow.down.right"
-                    ) {
-                        toggleImmersive()
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var compactControlsRow: some View {
-        HStack(spacing: 18) {
-            episodeCluster(size: 40, font: .title3)
-            systemPlayback.routePickerButton()
-            if pictureInPictureController.isSupported {
-                iconControlButton(
-                    systemImage: "pip.enter",
-                    size: 40,
-                    font: .title3
-                ) {
-                    pictureInPictureController.start()
-                    revealControlsTemporarily()
-                }
-            }
-            downloadSpeedLabel
-            superResolutionMenuButton(size: 40, font: .title3)
-            speedMenuButton
-            if interaction.showsFullscreenToggle {
-                iconControlButton(
-                    systemImage: isImmersive ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right"
-                ) {
-                    toggleImmersive()
-                }
-            }
-        }
-    }
-
-    private var downloadSpeedLabel: some View {
-        Text(
-            DownloadSpeedFormatter.format(
-                bytesPerSecond: coordinator.backend.downloadSpeedBps
-            )
-        )
-        .font(.caption.weight(.medium))
-        .foregroundStyle(.white.opacity(0.9))
-        .fixedSize(horizontal: true, vertical: false)
-        .accessibilityLabel("下行速度")
-    }
-
-    @ViewBuilder
     private var speedMenuButton: some View {
         Menu {
             ForEach([0.5, 1.0, 1.25, 1.5, 2.0], id: \.self) { rate in
@@ -613,9 +568,25 @@ public struct PlayerView: View {
                 }
             }
         } label: {
-            iconControlButtonLabel(systemImage: "speedometer")
+            Text(currentRateText)
+                .font(.subheadline.monospacedDigit().weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(height: 40)
+                .padding(.horizontal, 8)
+                .contentShape(Rectangle())
+                .shadow(color: .black.opacity(0.4), radius: 8, y: 1)
         }
+        .menuStyle(.button)
         .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .accessibilityLabel("播放倍速")
+    }
+
+    /// 长按倍速期间显示的是临时值，会在松手后弹回，所以直接读 backend 的实时 rate。
+    private var currentRateText: String {
+        let rate = coordinator.backend.rate
+        let effective = rate > 0 ? rate : 1
+        return String(format: "%gx", (effective * 100).rounded() / 100)
     }
 
     @ViewBuilder

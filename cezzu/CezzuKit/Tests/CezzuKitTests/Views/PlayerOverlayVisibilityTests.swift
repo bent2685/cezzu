@@ -9,12 +9,10 @@ struct PlayerOverlayVisibilityTests {
         let visibility = PlayerOverlayVisibility(
             controlsVisible: true,
             isTemporaryBoosting: true,
-            isSourcePanelPresented: false,
             isLoadingVisible: false,
             phase: .playing
         )
 
-        #expect(!visibility.showsCenterPlaybackControls)
         #expect(!visibility.showsTopBar)
         #expect(!visibility.showsBottomControls)
         #expect(visibility.showsTemporaryBoostBadge)
@@ -25,12 +23,10 @@ struct PlayerOverlayVisibilityTests {
         let visibility = PlayerOverlayVisibility(
             controlsVisible: true,
             isTemporaryBoosting: false,
-            isSourcePanelPresented: false,
             isLoadingVisible: false,
             phase: .playing
         )
 
-        #expect(visibility.showsCenterPlaybackControls)
         #expect(visibility.showsTopBar)
         #expect(visibility.showsBottomControls)
         #expect(!visibility.showsTemporaryBoostBadge)
@@ -41,12 +37,10 @@ struct PlayerOverlayVisibilityTests {
         let visibility = PlayerOverlayVisibility(
             controlsVisible: false,
             isTemporaryBoosting: false,
-            isSourcePanelPresented: false,
             isLoadingVisible: false,
             phase: .paused
         )
 
-        #expect(!visibility.showsCenterPlaybackControls)
         #expect(!visibility.showsTopBar)
         #expect(visibility.showsBottomControls)
         #expect(!visibility.showsTemporaryBoostBadge)
@@ -57,12 +51,10 @@ struct PlayerOverlayVisibilityTests {
         let visibility = PlayerOverlayVisibility(
             controlsVisible: true,
             isTemporaryBoosting: false,
-            isSourcePanelPresented: false,
             isLoadingVisible: true,
             phase: .loading
         )
 
-        #expect(!visibility.showsCenterPlaybackControls)
         #expect(visibility.showsTopBar)
         #expect(!visibility.showsBottomControls)
         #expect(!visibility.showsTemporaryBoostBadge)
@@ -73,12 +65,10 @@ struct PlayerOverlayVisibilityTests {
         let visibility = PlayerOverlayVisibility(
             controlsVisible: true,
             isTemporaryBoosting: false,
-            isSourcePanelPresented: false,
             isLoadingVisible: true,
             phase: .playing
         )
 
-        #expect(!visibility.showsCenterPlaybackControls)
         #expect(visibility.showsTopBar)
         #expect(visibility.showsBottomControls)
         #expect(!visibility.showsTemporaryBoostBadge)
