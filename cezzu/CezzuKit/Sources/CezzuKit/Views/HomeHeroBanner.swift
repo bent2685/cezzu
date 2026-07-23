@@ -18,7 +18,7 @@ enum HomeHeroBannerLayout {
     /// 渐变从图片高度的这个比例开始出现，图片底边处完全实心。
     static let scrimStart: CGFloat = 0.42
     /// 封面图相对页面的视差速度差：0 = 图完全不动，1 = 与页面同速（即无视差）。
-    static let parallaxFactor: CGFloat = 0.35
+    static let parallaxFactor: CGFloat = 0.18
     /// 指示器被提到轮播外层后固定不动，页内文案要给它让出这段高度。
     static let pageBarReservedHeight: CGFloat = 16
 

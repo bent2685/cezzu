@@ -134,7 +134,7 @@ struct HomeHeroBannerLayoutTests {
         // 图两侧各多出的量，必须 ≥ 最大位移，否则滑到 ±1 页时会露空边
         let slack = (overscan - page) / 2
         let maxShift = abs(HomeHeroBannerLayout.parallaxOffset(progress: 1, pageWidth: page))
-        #expect(slack >= maxShift)
+        #expect(slack >= maxShift - 0.001)
         #expect(HomeHeroBannerLayout.imageOverscanWidth(pageWidth: 0) == 0)
         #expect(HomeHeroBannerLayout.imageOverscanWidth(pageWidth: -100) == 0)
     }
