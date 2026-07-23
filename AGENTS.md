@@ -69,22 +69,7 @@
 - 优先用 SwiftUI 自适应（`@Environment(\.horizontalSizeClass)` 之类）解决
 - 必须分叉时，把分叉关到 App target 入口（`Cezzu-iOS/Sources/CezzuApp.swift` 或 `Cezzu-macOS/Sources/CezzuApp.swift`），不要污染 CezzuKit
 
-### 3.2 Liquid Glass 走封装组件，禁止直接 Material 或 glassEffect
-
-所有玻璃效果统一走 `cezzu/CezzuKit/Sources/CezzuKit/Views/Design/Glass*.swift` 一组组件（`GlassPanel` / `GlassPrimaryButton` / `GlassSecondaryButton` / `GlassToolbar` / `GlassListRow` / `GlassPlayerControls`）。所有 if-available 分叉（iOS 26+ 走真 Liquid Glass，老平台回落到 Material）都封装在 `Views/Design/GlassEffectCompat.swift` 的两个入口里：
-
-- `View.glassBackground(in:tint:)` —— 给任意 view 套玻璃背景，**唯一**允许接触玻璃效果的 modifier
-- `GlassContainer { ... }` —— `GlassEffectContainer` 的兼容包装
-
-**禁止**在 view 代码里直接使用：
-- `.glassEffect(...)` / `GlassEffectContainer { ... }` / `glassEffectID(...)` —— 这些都是 iOS 26+ only API，必须通过兼容层
-- `.background(.ultraThinMaterial)` / `.regularMaterial` 等 Material API
-- `.buttonStyle(.glass)` / `.buttonStyle(.glassProminent)` —— 用 `GlassPrimaryButton` / `GlassSecondaryButton`
-- 自绘伪玻璃（`.blur` + `.opacity` + `Color.white.opacity` 拼凑）
-
-需要新形态时**扩展 `GlassEffectCompat.swift` 或新建 `Glass*.swift` 组件**，而不是绕过它们。`if #available(iOS 26.0, ...)` 分叉**只允许出现在 `Views/Design/` 目录内**，业务层必须无感知。
-
-### 3.3 cezzu-rule 格式的 `muliSources` 历史拼写**不许"修复"**
+### 3.2 cezzu-rule 格式的 `muliSources` 历史拼写**不许"修复"**
 
 - 字段名是 `muliSources`（少一个 `t`）
 - 80+ 个 seed rule JSON 文件、Swift 解码器、文档全部按这个拼写写死
@@ -93,11 +78,11 @@
 
 完整字段定义见 `cezzu-rule/docs/rule-format.md`，那是格式的唯一权威文档。
 
-### 3.4 工程文件不入 git
+### 3.3 工程文件不入 git
 
 `*.xcodeproj/` / `*.xcworkspace/` 在 `.gitignore` 里。`cezzu/project.yml` 是唯一权威。改 target 配置请改 `project.yml` 然后让用户本地 `xcodegen generate`，**不要**把生成的 `Cezzu.xcodeproj/` commit 进去。
 
-### 3.5 同步种子规则的脚本必须能跑
+### 3.4 同步种子规则的脚本必须能跑
 
 `cezzu/scripts/sync_seed_rules.sh` 是 Xcode App target 的 pre-build phase。改它的时候要保持向后兼容（`set -euo pipefail`、明确的错误信息、找不到 `cezzu-rule/` 时退出非零）。
 
