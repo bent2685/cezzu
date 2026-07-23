@@ -41,6 +41,47 @@ enum HomeHeroBannerLayout {
         return min(max(0, raw), pageCount - 1)
     }
 
+    // MARK: - 无限循环
+    //
+    // `.paging` 没有原生循环，靠铺三倍数组伪造：[本体, 本体, 本体]，开局停中段。
+    // 吸页停稳后若落到首段或尾段，把 scrollPosition 静默搬回中段的同名槽位 ——
+    // 三段内容完全一致，所以搬迁在画面上不可见。
+
+    /// 循环需要铺的总槽位数；单页无需循环。
+    static func loopedSlotCount(itemCount: Int) -> Int {
+        itemCount <= 1 ? max(0, itemCount) : itemCount * 3
+    }
+
+    /// 开局落点：中段里 activeIndex 对应的槽位。
+    static func loopStartSlot(itemCount: Int, activeIndex: Int) -> Int {
+        guard itemCount > 1 else { return 0 }
+        return itemCount + min(max(0, activeIndex), itemCount - 1)
+    }
+
+    /// 槽位 → 真实条目下标。
+    static func realIndex(slot: Int, itemCount: Int) -> Int {
+        guard itemCount > 0 else { return 0 }
+        let wrapped = slot % itemCount
+        return wrapped < 0 ? wrapped + itemCount : wrapped
+    }
+
+    /// 需要静默搬迁时返回目标槽位；已在中段则返回 `nil`。
+    static func recenteredSlot(slot: Int, itemCount: Int) -> Int? {
+        guard itemCount > 1 else { return nil }
+        let target = itemCount + realIndex(slot: slot, itemCount: itemCount)
+        return target == slot ? nil : target
+    }
+
+    /// 指示器高亮权重：位置与下标的环形距离，跨首尾时高亮绕回而不是横穿整排。
+    static func pageBarWeight(position: CGFloat, index: Int, itemCount: Int) -> CGFloat {
+        guard itemCount > 0 else { return 0 }
+        let count = CGFloat(itemCount)
+        var wrapped = position.truncatingRemainder(dividingBy: count)
+        if wrapped < 0 { wrapped += count }
+        let raw = abs(wrapped - CGFloat(index))
+        return max(0, 1 - min(raw, count - raw))
+    }
+
     static func contentHeight(viewportHeight: CGFloat) -> CGFloat {
         max(minHeight, viewportHeight * viewportHeightRatio)
     }
@@ -195,15 +236,17 @@ public struct HomeHeroBanner: View {
             ZStack(alignment: .bottomLeading) {
                 ScrollView(.horizontal) {
                     HStack(spacing: 0) {
-                        ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                        ForEach(0..<slotCount, id: \.self) { slot in
                             bannerPage(
-                                item: item,
-                                progress: CGFloat(index) - scrollOffset / width,
+                                item: items[HomeHeroBannerLayout.realIndex(
+                                    slot: slot, itemCount: items.count
+                                )],
+                                progress: CGFloat(slot) - scrollOffset / width,
                                 pageWidth: width,
                                 stretch: stretch
                             )
                             .frame(width: width)
-                            .id(index)
+                            .id(slot)
                         }
                     }
                     .scrollTargetLayout()
@@ -216,17 +259,24 @@ public struct HomeHeroBanner: View {
                 .onPreferenceChange(BannerScrollOffsetKey.self) { offset in
                     scrollOffset = offset
                 }
-                .onChange(of: HomeHeroBannerLayout.dominantIndex(
-                    scrollOffset: scrollOffset, pageWidth: width, pageCount: items.count
-                )) { _, dominant in
+                .onChange(of: dominantRealIndex(pageWidth: width)) { _, dominant in
                     onDominantIndexChange(dominant)
                 }
+                .onChange(of: scrollOffset) { _, _ in
+                    recenterIfSettled(pageWidth: width)
+                }
                 .onChange(of: scrolledSlot) { _, slot in
-                    guard let slot, slot != activeIndex else { return }
-                    onChangeIndex(slot)
+                    guard let slot else { return }
+                    let real = HomeHeroBannerLayout.realIndex(slot: slot, itemCount: items.count)
+                    guard real != activeIndex else { return }
+                    onChangeIndex(real)
                 }
                 .onAppear {
-                    if scrolledSlot == nil { scrolledSlot = activeIndex }
+                    if scrolledSlot == nil {
+                        scrolledSlot = HomeHeroBannerLayout.loopStartSlot(
+                            itemCount: items.count, activeIndex: activeIndex
+                        )
+                    }
                 }
 
                 pageBars(pageWidth: width)
@@ -237,6 +287,31 @@ public struct HomeHeroBanner: View {
             .frame(width: width, height: totalHeight + stretch)
             .clipped()
         }
+    }
+
+    private var slotCount: Int {
+        HomeHeroBannerLayout.loopedSlotCount(itemCount: items.count)
+    }
+
+    private func dominantRealIndex(pageWidth: CGFloat) -> Int {
+        let slot = HomeHeroBannerLayout.dominantIndex(
+            scrollOffset: scrollOffset, pageWidth: pageWidth, pageCount: slotCount
+        )
+        return HomeHeroBannerLayout.realIndex(slot: slot, itemCount: items.count)
+    }
+
+    /// 停稳在段外时静默搬回中段。三段内容一致，所以搬迁不可见，
+    /// 哪怕手指还按着也不会看出跳变。
+    private func recenterIfSettled(pageWidth: CGFloat) {
+        guard items.count > 1, pageWidth > 0 else { return }
+        let slot = Int((scrollOffset / pageWidth).rounded())
+        guard abs(scrollOffset - CGFloat(slot) * pageWidth) < 0.5 else { return }
+        guard let target = HomeHeroBannerLayout.recenteredSlot(
+            slot: slot, itemCount: items.count
+        ) else { return }
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) { scrolledSlot = target }
     }
 
     /// 用 scrollTargetLayout 的背景读内容偏移；`.paging` 不提供连续进度，只能自己量。
@@ -426,7 +501,9 @@ public struct HomeHeroBanner: View {
             let position = pageWidth > 0 ? scrollOffset / pageWidth : 0
             HStack(spacing: HomeHeroBannerLayout.pageBarSpacing) {
                 ForEach(items.indices, id: \.self) { index in
-                    let weight = max(0, 1 - abs(position - CGFloat(index)))
+                    let weight = HomeHeroBannerLayout.pageBarWeight(
+                        position: position, index: index, itemCount: items.count
+                    )
                     Capsule()
                         .fill(Color.white.opacity(0.35 + 0.65 * weight))
                         .frame(

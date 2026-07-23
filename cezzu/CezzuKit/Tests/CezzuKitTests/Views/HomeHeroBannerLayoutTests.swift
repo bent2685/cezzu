@@ -181,6 +181,71 @@ struct HomeHeroBannerLayoutTests {
         #expect(HomeHeroBannerLayout.dominantIndex(scrollOffset: 200, pageWidth: page, pageCount: 0) == 0)
     }
 
+    // MARK: - 无限循环
+
+    @Test("loopedSlotCount triples the items, but only when looping makes sense")
+    func loopSlotCount() {
+        #expect(HomeHeroBannerLayout.loopedSlotCount(itemCount: 5) == 15)
+        #expect(HomeHeroBannerLayout.loopedSlotCount(itemCount: 1) == 1)
+        #expect(HomeHeroBannerLayout.loopedSlotCount(itemCount: 0) == 0)
+        #expect(HomeHeroBannerLayout.loopedSlotCount(itemCount: -3) == 0)
+    }
+
+    @Test("loopStartSlot lands in the middle segment")
+    func loopStart() {
+        #expect(HomeHeroBannerLayout.loopStartSlot(itemCount: 5, activeIndex: 0) == 5)
+        #expect(HomeHeroBannerLayout.loopStartSlot(itemCount: 5, activeIndex: 3) == 8)
+        // 越界 activeIndex（缓存条目数缩水时会出现）不能算出段外槽位
+        #expect(HomeHeroBannerLayout.loopStartSlot(itemCount: 5, activeIndex: 99) == 9)
+        #expect(HomeHeroBannerLayout.loopStartSlot(itemCount: 5, activeIndex: -2) == 5)
+        #expect(HomeHeroBannerLayout.loopStartSlot(itemCount: 1, activeIndex: 0) == 0)
+    }
+
+    @Test("realIndex maps every segment back onto the items")
+    func realIndexMapping() {
+        for slot in 0..<15 {
+            #expect(HomeHeroBannerLayout.realIndex(slot: slot, itemCount: 5) == slot % 5)
+        }
+        #expect(HomeHeroBannerLayout.realIndex(slot: 0, itemCount: 0) == 0)
+    }
+
+    @Test("recenteredSlot moves outer segments home and leaves the middle alone")
+    func recenter() {
+        // 中段 5..<10 原地不动
+        for slot in 5..<10 {
+            #expect(HomeHeroBannerLayout.recenteredSlot(slot: slot, itemCount: 5) == nil)
+        }
+        #expect(HomeHeroBannerLayout.recenteredSlot(slot: 0, itemCount: 5) == 5)
+        #expect(HomeHeroBannerLayout.recenteredSlot(slot: 4, itemCount: 5) == 9)
+        #expect(HomeHeroBannerLayout.recenteredSlot(slot: 10, itemCount: 5) == 5)
+        #expect(HomeHeroBannerLayout.recenteredSlot(slot: 14, itemCount: 5) == 9)
+        // 搬迁后的槽位必须是不动点，否则会来回搬
+        let target = HomeHeroBannerLayout.recenteredSlot(slot: 14, itemCount: 5)!
+        #expect(HomeHeroBannerLayout.recenteredSlot(slot: target, itemCount: 5) == nil)
+        // 单页 / 空列表不循环，永不搬迁
+        #expect(HomeHeroBannerLayout.recenteredSlot(slot: 0, itemCount: 1) == nil)
+        #expect(HomeHeroBannerLayout.recenteredSlot(slot: 0, itemCount: 0) == nil)
+    }
+
+    @Test("pageBarWeight peaks on the current page and wraps around the ends")
+    func pageBarHighlight() {
+        #expect(abs(HomeHeroBannerLayout.pageBarWeight(position: 2, index: 2, itemCount: 5) - 1) < 0.001)
+        #expect(HomeHeroBannerLayout.pageBarWeight(position: 2, index: 0, itemCount: 5) == 0)
+        // 拖到两页之间：两条各分一半
+        let a = HomeHeroBannerLayout.pageBarWeight(position: 2.5, index: 2, itemCount: 5)
+        let b = HomeHeroBannerLayout.pageBarWeight(position: 2.5, index: 3, itemCount: 5)
+        #expect(abs(a - 0.5) < 0.001)
+        #expect(abs(b - 0.5) < 0.001)
+        // 末页往下一页滑时高亮绕回第一条，而不是横穿整排
+        let last = HomeHeroBannerLayout.pageBarWeight(position: 4.5, index: 4, itemCount: 5)
+        let first = HomeHeroBannerLayout.pageBarWeight(position: 4.5, index: 0, itemCount: 5)
+        #expect(abs(last - 0.5) < 0.001)
+        #expect(abs(first - 0.5) < 0.001)
+        // 第二、三段的位置要落到与中段相同的高亮
+        #expect(abs(HomeHeroBannerLayout.pageBarWeight(position: 12, index: 2, itemCount: 5) - 1) < 0.001)
+        #expect(HomeHeroBannerLayout.pageBarWeight(position: 2, index: 0, itemCount: 0) == 0)
+    }
+
     @Test("totalHeight matches content height without stacking top inset")
     func totalHeightMatchesContent() {
         let viewport: CGFloat = 800
